@@ -61,3 +61,28 @@ describe("SM-2: history follows a card past the streak", () => {
     expect(recovered.ease).toBeGreaterThan(punished.ease);
   });
 });
+
+describe("SM-2: the interval is capped for a deadline-bound deck", () => {
+  it("never schedules further out than 60 days, however long the streak", () => {
+    let state = newCard;
+    for (let i = 0; i < 50; i++) {
+      state = review(state, "easy");
+      expect(state.intervalDays).toBeLessThanOrEqual(60);
+    }
+  });
+
+  it("reaches the cap and stays there rather than oscillating", () => {
+    const long = Array<Grade>(20).fill("good");
+    expect(replay(...long).intervalDays).toBe(60);
+  });
+
+  it("still separates a clean card from a scarred one below the cap", () => {
+    const clean = replay("good", "good", "good", "good");
+    const scarred = replay(
+      "again", "again", "again", "again", "again", "again",
+      "good", "good", "good", "good",
+    );
+    expect(clean.intervalDays).toBeLessThan(60);
+    expect(scarred.intervalDays).toBeLessThan(clean.intervalDays);
+  });
+});

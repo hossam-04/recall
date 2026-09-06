@@ -19,6 +19,11 @@ const PASSING_QUALITY = 3;
 const STARTING_EASE = 2.5;
 const MINIMUM_EASE = 1.3;
 
+/** SM-2 assumes indefinite retention and will happily push a well-known card
+ *  past 200 days. Interview prep has a deadline, and a card that disappears for
+ *  eight months is functionally deleted. Capped at 60 days — see ADR-004. */
+const MAXIMUM_INTERVAL_DAYS = 60;
+
 export type CardState = {
   /** Consecutive successful reviews. Resets to 0 on `again`. */
   repetitions: number;
@@ -52,10 +57,15 @@ export function review(state: CardState, grade: Grade): CardState {
   }
 
   const repetitions = state.repetitions + 1;
-  const intervalDays =
+  const uncapped =
     repetitions === 1 ? 1
     : repetitions === 2 ? 6
     : Math.round(state.intervalDays * ease);
+
+  // The cap compresses the top of the range but not the climb: a card at ease
+  // 1.3 still takes about eleven reviews to reach 60 where an easy one takes
+  // five, so `ease` keeps mattering right up until the ceiling.
+  const intervalDays = Math.min(MAXIMUM_INTERVAL_DAYS, uncapped);
 
   return { repetitions, intervalDays, ease };
 }

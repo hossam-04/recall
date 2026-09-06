@@ -91,3 +91,37 @@ product still works. What is lost is the oracle, not the feature.
 
 *Would revisit if:* M0–M5 land inside the estimate. Then M6 buys the oracle back,
 and the comparison between my SM-2 and a reference FSRS becomes its own finding.
+
+---
+
+## ADR-004 — Cap the review interval at 60 days
+
+**Decision:** No card is ever scheduled more than 60 days out, regardless of
+streak or ease.
+
+*Alternatives:* Leave SM-2 unmodified (it has no ceiling); cap per deck against
+a user-set target date; cap by review count instead of days.
+
+**Why:** SM-2 was designed for indefinite retention with no deadline. Graded
+`good` every time, a card reaches 238 days by its sixth review — for a deck
+being used to prepare for interviews between now and December, that card is
+functionally deleted. The mismatch is between the algorithm's assumption and the
+use case, not a defect in the algorithm.
+
+60 was chosen by me as the deck owner, not derived. It is roughly the span
+between "I am preparing" and "I am interviewing".
+
+The cap compresses the top of the range but not the climb: a card at ease 1.3
+takes about eleven reviews to reach 60 days where an easy card takes five, so
+`ease` still does real work right up to the ceiling. What is lost is the
+distinction *above* 60 days, which for this deck is a distinction without a
+difference.
+
+A pleasant side effect: `ease` has no upper bound in SM-2 and grows 0.1 per
+`easy` grade forever. With a 60-day ceiling that unboundedness stops mattering,
+so it does not need its own fix.
+
+*Would revisit if:* this stops being a deadline-bound deck — a per-deck target
+date driving the cap is the obvious next version, and the constant is already
+isolated for it. Also revisit if the M5 eval shows most cards pinned at exactly
+60, which would mean the cap is doing the scheduling and SM-2 is not.

@@ -152,5 +152,7 @@ before any code is written.
 - **`redis-clone` still shows 🔨 in `PROJECTS.md`** with all four milestones
   ticked in its own log. Either it is done and should say ✅, or the open
   `everysec` finding in ADR-013 is real remaining work. Unresolved.
+- **`ease` is unbounded above.** Harmless today because ADR-004's 60-day cap
+  swallows it, but if the cap ever becomes per-deck and large, this comes back.
 - **The oracle is weaker here than in either previous project.** ADR-002 records
   the argument that this makes the repo undifferentiated. It gets judged at M5.
