@@ -1,0 +1,17 @@
+{
+  "name": "starter",
+  "cards": [
+    { "id": "sm2-ease", "front": "In SM-2, why keep `repetitions` and `ease` as separate fields?",
+      "back": "They decay differently on purpose. A lapse zeroes the streak but leaves the ease, so failing a card is not a fresh start — its whole future schedule stays tighter.",
+      "state": { "repetitions": 0, "intervalDays": 0, "ease": 2.5 }, "dueAt": "2026-09-07" },
+    { "id": "ease-floor", "front": "SM-2's ease factor has a floor of 1.3. What breaks without it, and what breaks because of it?",
+      "back": "Without it, a repeatedly-failed card's ease trends toward zero and its interval collapses permanently. With it, every hard card piles up at exactly 1.3 and becomes indistinguishable from every other hard card.",
+      "state": { "repetitions": 0, "intervalDays": 0, "ease": 2.5 }, "dueAt": "2026-09-07" },
+    { "id": "abs-vs-rel", "front": "Why store an absolute due date rather than recomputing it from lastReviewed + interval?",
+      "back": "It stores a decision, not the ingredients. Change a scheduling constant and nothing already scheduled moves — you don't sit down to 200 cards that came due because you edited a number.",
+      "state": { "repetitions": 0, "intervalDays": 0, "ease": 2.5 }, "dueAt": "2026-09-07" },
+    { "id": "atomic-write", "front": "Why write to a temp file and rename, instead of writing the file in place?",
+      "back": "rename() is atomic within a filesystem. A crash mid-write leaves the old file intact rather than a truncated one — the reader never sees a half-written state.",
+      "state": { "repetitions": 0, "intervalDays": 0, "ease": 2.5 }, "dueAt": "2026-09-07" }
+  ]
+}

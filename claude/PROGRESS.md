@@ -7,26 +7,40 @@ code alone does not carry.
 
 ## Current state
 
-**Session 0 — M0 is done. The toolchain runs and `npm run verify` exits 0.**
+**Session 1 — M1 is done. There is a working scheduler and a CLI that uses it.**
 
 ```
 $ npm run verify
 tsc --noEmit   → clean
-vitest run     → 1 file, 2 tests passed
+vitest run     → 5 files, 34 tests passed
 $ echo $?
 0
 ```
 
-What exists: `package.json`, a strict `tsconfig.json`, `.gitignore`,
-`.env.example`, and one placeholder module with a test that will be deleted in
-M1. Postgres 18.6 is running as a brew service and the `recall` database exists.
+SM-2 with a fourth grade scale, an ease factor kept separate from the streak,
+and a 60-day cap (ADR-004). `npm run review -- decks/starter.json` quizzes the
+cards that are due, saves after every answer, and survives being interrupted.
 
-No implementation code was written this session, by design.
+Three things were verified by breaking them rather than by assertion:
 
-**What is deliberately not done**, so it is not mistaken for progress: no
-scheduler, no schema, no migrations, no server, no UI, no LLM code. `verify`
-currently runs typecheck and unit tests only — migrations, integration tests and
-Playwright join it as the milestones that introduce them land.
+- **The property tests bite.** Removing the ease floor, removing the cap, and
+  swapping `hard` with `easy` in the quality table were each caught — the last
+  one changes no structure, only two numbers.
+- **The timezone test did not bite** at first. It checked 23:00, which is the
+  wrong end of the day at UTC+3; `toISOString` passed it by luck. It now checks
+  both ends and fails correctly when swapped to UTC.
+- **The CLI hung** on non-TTY stdin, because `rl.question()` never resolves if
+  the stream closes first. A prompt that cannot be answered is a hang, not an
+  error, and nothing reports it.
+
+**What is deliberately not done:** no database, no server, no UI, no LLM code.
+`verify` still runs typecheck and unit tests only — migrations, integration
+tests and Playwright join it as their milestones land. The readline adapter
+(~15 lines) has no automated test; see ADR-006.
+
+**Session 0** set up the toolchain, the three project logs, and a strict
+`tsconfig`. Postgres 18.6 runs as a brew service and the `recall` database
+exists, unused so far.
 
 ## Pace — read this before believing any estimate
 
@@ -57,7 +71,7 @@ within days rather than being invisible for a month.
 | # | Goal | Bar (the command that decides) | Done |
 |---|---|---|---|
 | 0 | Toolchain + repo scaffold | `npm run verify` exits 0 | ☑ |
-| 1 | SM-2 scheduler + terminal review CLI | `npm test` — property tests green | ☐ |
+| 1 | SM-2 scheduler + terminal review CLI | `npm test` — property tests green | ☑ |
 | 2 | Postgres, migrations, Fastify API, session auth | `./scripts/api-smoke.sh` exits 0 | ☐ |
 | 3 | React review UI, keyboard-driven | `npx playwright test` green | ☐ |
 | 4 | AI generation, both modes, approval queue | `npm run verify` green against fixtures | ☐ |
@@ -96,6 +110,8 @@ front-loaded:
 | Validating untrusted input at a boundary | `png-from-scratch` (chunk parsing) | M2 — request body validation |
 | Length/format framing of a wire protocol | `redis-clone` (RESP) | M2 — HTTP semantics and content types |
 | Buffering and flush policy | `redis-clone` (AOF writer) | M4 — streaming and prompt caching |
+| Absolute vs relative deadlines | `redis-clone` (TTLs in the AOF) | **M1 — done, ADR-005** |
+| Atomic write via temp + rename | `redis-clone` (AOF durability) | **M1 — done, `deck-file.ts`** |
 | Truncated vs corrupt input | both | M4 — `parsed_output === null` handling |
 
 All four are **unverified**: the cold-recall probes were declined when
@@ -133,13 +149,21 @@ when its milestone arrives: `fastify`, `pg`, `zod`, `argon2`, `react`, `vite`,
 
 ## Next up
 
-M1: the SM-2 scheduler as a pure module, plus a CLI that quizzes from a JSON
-deck. No web, no database. Starts with the prediction question below, answered
-before any code is written.
+M2: Postgres schema and migrations, then Fastify, then session auth. The bar is
+`./scripts/api-smoke.sh` exiting 0 — sign up, log in, create a deck, submit
+reviews, and a second user getting 403 on the first user's deck.
 
-> A card you got right yesterday and a card you got right for the fourth time
-> both come up correct today. Should they get the same next interval? If not,
-> what does the algorithm need to track to tell them apart?
+The prediction question to answer before any schema is written:
+
+> A review is an event that happened, and a card's state is what those events
+> add up to. Store both, or store only one and derive the other? What breaks in
+> each direction?
+
+Answered in session 1, for the record: *should a card on its 4th correct review
+get the same interval as one on its 1st?* — "no, the 4th should take a longer
+interval", then "b should be shorter, maybe number of fails" for the follow-up.
+Both correct in direction; SM-2 uses a recovering multiplier rather than a
+counter, for the reasons in ADR-004's neighbours.
 
 ## Open questions
 

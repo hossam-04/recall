@@ -125,3 +125,73 @@ so it does not need its own fix.
 date driving the cap is the obvious next version, and the constant is already
 isolated for it. Also revisit if the M5 eval shows most cards pinned at exactly
 60, which would mean the cap is doing the scheduling and SM-2 is not.
+
+---
+
+## ADR-005 — Store an absolute due date, as a calendar date
+
+**Decision:** A card stores `dueAt` — the calendar date it next comes up,
+written at review time. Not `lastReviewedAt` plus a recomputed interval, and not
+a timestamp.
+
+*Alternatives:* store the ingredients (`lastReviewedAt` + `intervalDays`) and
+compute due-ness at query time; store an exact timestamp rather than a date.
+
+**Why absolute:** it stores a *decision*, not the ingredients for one. Change a
+scheduling constant tomorrow — the ADR-004 cap, say — and nothing already
+scheduled moves. You do not sit down to two hundred cards that came due because
+a number in the source changed. Past scheduling stays immutable; new policy
+applies from the next review forward.
+
+Note that the common "what if I don't open it for three weeks" argument does
+*not* distinguish the two: `lastReviewedAt + intervalDays < now` is just as true
+after three weeks as a stored date is. Both handle that correctly. The real
+difference is only visible when the policy changes.
+
+**Why a date and not a timestamp:** with a timestamp, a card reviewed at 9pm
+comes due at 9pm the following day, so an 8pm session skips it and every review
+drifts a little later than the last. Over weeks that compounds until a "daily"
+card is effectively on a 25-hour cycle. A calendar date means due-today is
+due-today whenever you sit down.
+
+The date is computed in local time, deliberately. `toISOString` would give UTC,
+which is the wrong calendar day for part of every day at any non-zero offset —
+the late evening west of Greenwich, the early morning east of it. In
+Africa/Cairo (UTC+3) a card reviewed at 01:00 would be filed under yesterday.
+The test for this initially passed by luck at this offset because it only
+checked 23:00; it now checks both ends of the day.
+
+*Would revisit if:* the deck ever needs sub-day intervals for cramming, where
+drift stops mattering and precision starts.
+
+---
+
+## ADR-006 — The review loop takes its input source as a parameter
+
+**Decision:** `runSession` receives `{ ask, save, print }` rather than reaching
+for `readline`, the filesystem, and `console` itself. The CLI supplies a
+readline-backed implementation; tests supply a scripted one.
+
+*Alternatives:* have the loop own its I/O and test it by piping stdin, or by
+driving a pseudo-terminal.
+
+**Why:** both alternatives were tried and both failed, for reasons worth
+recording. Piping stdin does not work because `readline` in non-TTY mode drains
+the whole stream and fires `close` before the second prompt reads a line — the
+session ends after one answer. Driving a pty with `script` fails differently:
+the input arrives before the process is ready to read it.
+
+The result either way was an interactive loop that only a human could exercise,
+which is exactly where bugs go unobserved. Injecting the input source is not
+about purity — it is that a terminal cannot be asserted against.
+
+What this bought immediately: tests for saving after every card rather than at
+the end, for keeping completed work when input ends mid-deck, and for re-asking
+on an unrecognised grade instead of guessing one. None of those were reachable
+before.
+
+**Left untested on purpose:** the ~15-line readline adapter. It is the thinnest
+possible wrapper and it gets exercised the first time the CLI is run for real.
+
+*Would revisit if:* the adapter grows past trivial, at which point it needs a pty
+harness rather than an excuse.

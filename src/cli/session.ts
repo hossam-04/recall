@@ -1,0 +1,67 @@
+import { dueCards, gradeCard, type Card, type Deck } from "../scheduler/deck.js";
+import type { Grade } from "../scheduler/sm2.js";
+
+const KEYS: Record<string, Grade> = {
+  "1": "again", "2": "hard", "3": "good", "4": "easy",
+};
+
+/** Raised when the input source is exhausted — stdin closed, or a test script
+ *  ran out of answers. Distinct from an error: quitting early is legitimate. */
+export class InputClosed extends Error {}
+
+export type Ask = (prompt: string) => Promise<string>;
+
+export type SessionIO = {
+  ask: Ask;
+  /** Called after every graded card, not once at the end, so quitting early
+   *  never costs a review. */
+  save: (deck: Deck) => Promise<void>;
+  print: (line: string) => void;
+};
+
+export type SessionResult = { reviewed: number; endedEarly: boolean };
+
+export async function runSession(deck: Deck, now: Date, io: SessionIO): Promise<SessionResult> {
+  const queue = dueCards(deck, now);
+  let reviewed = 0;
+
+  try {
+    for (const card of queue) {
+      io.print(`\x1b[1m${card.front}\x1b[0m`);
+      await io.ask("  [enter to reveal] ");
+      io.print(`  ${card.back}\n`);
+
+      const grade = await askGrade(io);
+      const graded = gradeCard(card, grade, now);
+      deck.cards = deck.cards.map((c) => (c.id === graded.id ? graded : c));
+      await io.save(deck);
+
+      reviewed++;
+      io.print(
+        `  → back in ${graded.state.intervalDays}d (${graded.dueAt}), ` +
+        `ease ${graded.state.ease.toFixed(2)}\n`,
+      );
+    }
+  } catch (error) {
+    if (!(error instanceof InputClosed)) throw error;
+    return { reviewed, endedEarly: true };
+  }
+
+  return { reviewed, endedEarly: false };
+}
+
+async function askGrade(io: SessionIO): Promise<Grade> {
+  for (;;) {
+    const answer = await io.ask("  1 again  2 hard  3 good  4 easy > ");
+    const grade = KEYS[answer.trim()];
+    if (grade !== undefined) return grade;
+    io.print("  Pick 1, 2, 3, or 4.");
+  }
+}
+
+export function summarise(deck: Deck, now: Date): string {
+  const due = dueCards(deck, now).length;
+  if (due > 0) return `${due} due in "${deck.name}".`;
+  const next = deck.cards.map((c: Card) => c.dueAt).sort()[0];
+  return `Nothing due in "${deck.name}".${next ? ` Next card: ${next}.` : ""}`;
+}
