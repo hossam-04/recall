@@ -1,0 +1,61 @@
+/**
+ * SM-2 scheduling.
+ *
+ * Grades are four buttons, not SM-2's original 0-5 scale. Chose four because a
+ * six-point self-assessment of your own recall is noise — nobody can reliably
+ * tell their own "4" from their own "5". Rejected the 0-5 scale for that reason;
+ * would switch back if the M5 eval shows the extra resolution changing
+ * scheduling decisions in a way that matters.
+ */
+export type Grade = "again" | "hard" | "good" | "easy";
+
+/** The four buttons mapped onto SM-2's quality scale. `hard` is deliberately a
+ *  pass: you recalled it, so the streak survives — but the ease drops. */
+const QUALITY: Record<Grade, number> = { again: 2, hard: 3, good: 4, easy: 5 };
+const PASSING_QUALITY = 3;
+
+/** SM-2's constants. The floor exists because without it a repeatedly-failed
+ *  card's ease goes to zero and its interval collapses to nothing forever. */
+const STARTING_EASE = 2.5;
+const MINIMUM_EASE = 1.3;
+
+export type CardState = {
+  /** Consecutive successful reviews. Resets to 0 on `again`. */
+  repetitions: number;
+  /** Days until this card is due again, from the moment it was reviewed. */
+  intervalDays: number;
+  /** How easy this card has proven *for you*. Multiplies the interval, so it
+   *  compounds: a card at 1.3 grows four times slower than one at 2.5. Unlike
+   *  a fail counter it recovers — grade a card `easy` and it climbs back. */
+  ease: number;
+};
+
+export const newCard: CardState = {
+  repetitions: 0,
+  intervalDays: 0,
+  ease: STARTING_EASE,
+};
+
+export function review(state: CardState, grade: Grade): CardState {
+  const q = QUALITY[grade];
+
+  // SM-2's ease update. At q=4 the delta is exactly 0, so a card you keep
+  // grading `good` holds its ease steady; `hard` costs 0.14, `again` costs
+  // 0.32, `easy` earns 0.10.
+  const delta = 0.1 - (5 - q) * (0.08 + (5 - q) * 0.02);
+  const ease = Math.max(MINIMUM_EASE, state.ease + delta);
+
+  if (q < PASSING_QUALITY) {
+    // The streak is gone, but the ease is not — that is the whole point of
+    // keeping it separate from `repetitions`.
+    return { repetitions: 0, intervalDays: 1, ease };
+  }
+
+  const repetitions = state.repetitions + 1;
+  const intervalDays =
+    repetitions === 1 ? 1
+    : repetitions === 2 ? 6
+    : Math.round(state.intervalDays * ease);
+
+  return { repetitions, intervalDays, ease };
+}

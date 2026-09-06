@@ -46,8 +46,11 @@ decision in it. The scope cuts below exist because of it, and the tripwires are
 calendar dates rather than session counts, because sessions only elapse if I
 show up.
 
-**Open question for session 1:** what is the honest weekly budget now? The
-estimate below assumes nothing until that is answered.
+**Answered 2026-09-06: 30 h/week stands — roughly 10 sessions of 2.5–3h.**
+Taken as the budget and not re-argued. It puts M0–M5 at about **two calendar
+weeks**, so the dates below are tight on purpose: at ten sessions a week, a
+quiet week is ten missed sessions, and the burst-then-stop pattern would show up
+within days rather than being invisible for a month.
 
 ## Plan
 
@@ -67,15 +70,20 @@ plan. M6 excluded.
 
 ## Dates
 
-- **Tripwire — 2026-09-13.** If M1 is not done a week in, the burst-then-stop
-  pattern has already repeated and the scope is wrong, not the schedule.
-- **Kill check — 2026-09-27.** If auth and Postgres are not working end to end,
-  cut to SQLite with plain cookie sessions and no CSRF, and record why.
-- **Pattern check — any 14 consecutive days with no commit.** That is the
-  `png-from-scratch` signature. Stop and decide deliberately whether to park this
-  or resume it; do not let it drift into a third open repo.
-- **Ship-without-AI check — 2026-10-18.** If M4 has not started, ship the SRS
+Derived from 10 sessions/week, starting 2026-09-06.
+
+- **Tripwire — 2026-09-09.** M1 is 2 sessions. If it is not done in three days,
+  the budget is not real and every date below is fiction.
+- **Kill check — 2026-09-13.** M2 is cumulative session 7. If auth and Postgres
+  are not working end to end, cut to SQLite with plain cookie sessions and no
+  CSRF, and record why.
+- **Pattern check — any 7 consecutive days with no commit.** At this budget that
+  is ten missed sessions, and it is the `png-from-scratch` signature. Stop and
+  decide deliberately whether to park this or resume it; do not let it drift
+  into a third open repo.
+- **Ship-without-AI check — 2026-09-20.** If M4 has not started, ship the SRS
   without generation and say so in the README.
+- **Target for M0–M5 — 2026-09-20.**
 
 ## Re-derivation schedule
 
@@ -135,8 +143,14 @@ before any code is written.
 
 ## Open questions
 
-- **The weekly budget.** Unanswered, and every estimate here depends on it.
-- **`png-from-scratch` is parked at M1 of 4.** Not abandoned, not progressing.
-  `PROJECTS.md` should say so explicitly rather than leave it implied.
+- ~~The weekly budget.~~ Answered 2026-09-06: 30 h/week, ~10 sessions.
+  The commit record does not yet support it; the 2026-09-09 tripwire is what
+  tests it cheaply.
+- ~~`png-from-scratch` should be marked parked.~~ Done 2026-09-06 — it is now
+  row 1b in `PROJECTS.md`, parked with the resume path recorded (M2 is real
+  `inflate`; the oracle and corpus are already wired and passing).
+- **`redis-clone` still shows 🔨 in `PROJECTS.md`** with all four milestones
+  ticked in its own log. Either it is done and should say ✅, or the open
+  `everysec` finding in ADR-013 is real remaining work. Unresolved.
 - **The oracle is weaker here than in either previous project.** ADR-002 records
   the argument that this makes the repo undifferentiated. It gets judged at M5.
