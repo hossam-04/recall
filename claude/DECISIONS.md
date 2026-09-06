@@ -195,3 +195,59 @@ possible wrapper and it gets exercised the first time the CLI is run for real.
 
 *Would revisit if:* the adapter grows past trivial, at which point it needs a pty
 harness rather than an excuse.
+
+---
+
+## ADR-007 — Sessions live in the database, not in a signed token
+
+**Decision:** Logging in creates a row in `sessions`. The cookie carries an
+opaque random id that means nothing on its own; every request looks the row up.
+
+*Alternatives:* a signed JWT in a cookie, or the same JWT in `localStorage`.
+
+**Why:** a row can be deleted. Logging out, revoking every session after a
+password change, or cutting off a device you lost are all a `DELETE`. A JWT
+cannot be un-issued — once signed it is valid until it expires, and the only
+mitigations are keeping expiry very short (which means refresh-token machinery,
+more moving parts than the thing it replaced) or maintaining a revocation list
+(which is a session table with extra steps).
+
+The `localStorage` variant is worse again: any script on the page can read it,
+so one XSS is a stolen credential rather than a stolen page. An httpOnly cookie
+is not readable from JavaScript at all. This is the single most common security
+mistake in junior portfolios and this project exists partly to not make it.
+
+The cost is a database read per authenticated request. That is one indexed
+primary-key lookup, and the alternative costs a signature verification anyway.
+
+*Would revisit if:* this ever ran across multiple services that could not share
+a database — the case JWTs actually exist for.
+
+---
+
+## ADR-008 — Migrations are checksummed, and each runs in a transaction
+
+**Decision:** Plain `.sql` files applied in filename order. Applied versions are
+recorded with a SHA-256 of their contents; a mismatch on a later run is a fatal
+error, not a warning. Each migration runs inside its own transaction.
+
+*Alternatives:* a migration library; ORM-generated migrations; applying files
+without recording checksums.
+
+**Why the checksum:** editing a migration that has already run is silent
+corruption. Your database has the old version's effects, a colleague's fresh
+database gets the new version's, and the two schemas differ with nothing to
+announce it. The failure surfaces much later as behaviour that makes no sense.
+Refusing to run is the only honest response — the fix is always a new migration.
+
+**Why a transaction each:** Postgres has transactional DDL, so a migration that
+fails halfway leaves the schema exactly as it was. Without it you get a database
+in a state no migration file describes, which is unreachable by any code path
+and has to be repaired by hand.
+
+**Why not a library:** schema design and SQL are the learning targets here, and
+the runner is about sixty lines. Migration tooling would hide the part worth
+understanding.
+
+*Would revisit if:* this needed down-migrations or non-transactional operations
+like `create index concurrently`, both of which the sixty lines do not handle.

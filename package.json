@@ -11,12 +11,17 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "verify": "npm run typecheck && npm run test",
-    "review": "tsx src/cli/review.ts"
+    "review": "tsx --env-file-if-exists=.env src/cli/review.ts",
+    "migrate": "tsx --env-file-if-exists=.env scripts/migrate.ts"
   },
   "devDependencies": {
     "@types/node": "^26.4.1",
+    "@types/pg": "^8.23.1",
     "tsx": "^4.23.13",
     "typescript": "^5.9.3",
     "vitest": "^5.0.0"
+  },
+  "dependencies": {
+    "pg": "^8.23.0"
   }
 }
