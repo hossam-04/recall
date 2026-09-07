@@ -53,5 +53,10 @@ export function gradeCard(card: Card, grade: Grade, now: Date): Card {
 }
 
 export function createCard(id: string, front: string, back: string, now: Date): Card {
-  return { id, front, back, state: newCard, dueAt: toDateString(now) };
+  // Copy, do not alias. `newCard` is a module-level object, so assigning it
+  // directly would give every card in every deck the same state object — and
+  // the first `card.state.ease = x` anywhere would change all of them and the
+  // constant too. Nothing mutates state today; this makes it impossible to
+  // start, rather than relying on that staying true.
+  return { id, front, back, state: { ...newCard }, dueAt: toDateString(now) };
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addDays, createCard, dueCards, gradeCard, isDue, toDateString } from "../../src/scheduler/deck.js";
+import { newCard } from "../../src/scheduler/sm2.js";
 
 const at = (y: number, m: number, d: number, h = 12, min = 0) =>
   new Date(y, m - 1, d, h, min);
@@ -71,5 +72,28 @@ describe("date arithmetic", () => {
     // this test bites in either hemisphere instead of passing by luck.
     expect(toDateString(at(2026, 9, 7, 23, 30))).toBe("2026-09-07");
     expect(toDateString(at(2026, 9, 8, 0, 30))).toBe("2026-09-08");
+  });
+});
+
+describe("card creation does not share state between cards", () => {
+  it("gives each card its own state object", () => {
+    const now = at(2026, 9, 7);
+    const a = createCard("a", "q", "a", now);
+    const b = createCard("b", "q", "a", now);
+
+    expect(a.state).not.toBe(b.state);
+    expect(a.state).not.toBe(newCard);
+    expect(a.state).toEqual(b.state);
+  });
+
+  it("does not leak a mutation of one card into another, or into newCard", () => {
+    const now = at(2026, 9, 7);
+    const a = createCard("a", "q", "a", now);
+    const b = createCard("b", "q", "a", now);
+
+    a.state.ease = 9.9;
+
+    expect(b.state.ease).toBe(2.5);
+    expect(newCard.ease).toBe(2.5);
   });
 });
