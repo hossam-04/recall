@@ -76,7 +76,15 @@ describe("review session", () => {
     deck.cards[0]!.dueAt = "2026-12-01";
     const s = scripted([]);
     expect(await runSession(deck, NOW, s.io)).toEqual({ reviewed: 0, endedEarly: false });
-    expect(summarise(deck, NOW)).toBe('Nothing due in "test". Next card: 2026-12-01.');
+    expect(summarise(deck, NOW)).toEqual({
+      due: 0,
+      message: 'Nothing due in "test". Next card: 2026-12-01.',
+    });
+  });
+
+  it("reports the count separately from the sentence, so callers need not parse it", async () => {
+    const deck = deckOf("a", "b");
+    expect(summarise(deck, NOW).due).toBe(2);
   });
 });
 

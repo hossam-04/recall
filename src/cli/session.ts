@@ -82,9 +82,14 @@ async function askGrade(io: SessionIO): Promise<Grade> {
   }
 }
 
-export function summarise(deck: Deck, now: Date): string {
+/** The count and the sentence about it, so callers branch on the number rather
+ *  than string-matching a message that is free to change. */
+export function summarise(deck: Deck, now: Date): { due: number; message: string } {
   const due = dueCards(deck, now).length;
-  if (due > 0) return `${due} due in "${deck.name}".`;
+  if (due > 0) return { due, message: `${due} due in "${deck.name}".` };
+
+  // `.map` first: `.sort()` is in-place, and sorting `deck.cards` itself would
+  // reorder the caller's deck as a side effect of printing a summary.
   const next = deck.cards.map((c: Card) => c.dueAt).sort()[0];
-  return `Nothing due in "${deck.name}".${next ? ` Next card: ${next}.` : ""}`;
+  return { due, message: `Nothing due in "${deck.name}".${next ? ` Next card: ${next}.` : ""}` };
 }

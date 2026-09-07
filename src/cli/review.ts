@@ -26,12 +26,10 @@ async function main(): Promise<number> {
 
   const deck = await loadDeck(path);
   const now = new Date();
-  console.log(summarise(deck, now));
-  if (!summarise(deck, now).startsWith("Nothing")) {
-    console.log("Ctrl-C to stop; progress is saved as you go.\n");
-  } else {
-    return 0;
-  }
+  const { due, message } = summarise(deck, now);
+  console.log(message);
+  if (due === 0) return 0;
+  console.log("Ctrl-C to stop; progress is saved as you go.\n");
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
@@ -51,4 +49,13 @@ async function main(): Promise<number> {
   return 0;
 }
 
-main().then((code) => process.exit(code));
+main().then(
+  (code) => { process.exitCode = code; },
+  (error: unknown) => {
+    // Without this, a missing deck or malformed JSON is an unhandled rejection:
+    // a stack trace rather than a message. Setting `exitCode` instead of
+    // calling `process.exit` lets Node drain stdout before it leaves.
+    console.error(error instanceof Error ? `recall: ${error.message}` : String(error));
+    process.exitCode = 1;
+  },
+);
