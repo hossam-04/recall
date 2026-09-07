@@ -217,9 +217,13 @@ counter, for the reasons in ADR-004's neighbours.
 - ~~`png-from-scratch` should be marked parked.~~ Done 2026-09-06 — it is now
   row 1b in `PROJECTS.md`, parked with the resume path recorded (M2 is real
   `inflate`; the oracle and corpus are already wired and passing).
-- **`redis-clone` still shows 🔨 in `PROJECTS.md`** with all four milestones
-  ticked in its own log. Either it is done and should say ✅, or the open
-  `everysec` finding in ADR-013 is real remaining work. Unresolved.
+- ~~`redis-clone` still shows 🔨 in `PROJECTS.md`.~~ Resolved 2026-09-07 —
+  marked ✅ shipped. Everything in its stated scope is built and measured; the
+  `everysec` finding in ADR-013 is a documented limitation, not unfinished
+  scope, and `PROJECTS.md` now states it in the open (4.8× Redis p99 at 50
+  clients, contention on the write side) rather than leaving the row ambiguous.
+  Resume bullet filled with the measured numbers, per the rule in that file that
+  a bullet never ships without one.
 - **`loadDeck` casts `JSON.parse` output to `Deck` without checking it.** A
   malformed file produces a `Deck`-typed object that is not one, and the failure
   surfaces far away. M2 fixes this with Zod — it is the "validate untrusted
