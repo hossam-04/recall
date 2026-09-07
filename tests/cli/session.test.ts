@@ -79,3 +79,42 @@ describe("review session", () => {
     expect(summarise(deck, NOW)).toBe('Nothing due in "test". Next card: 2026-12-01.');
   });
 });
+
+describe("a failed card comes back in the same session", () => {
+  it("re-shows a card graded `again` and stops once it passes", async () => {
+    const deck = deckOf("a");
+    const s = scripted(["", "1", "", "3"]); // again, then good
+    const result = await runSession(deck, NOW, s.io);
+
+    expect(result).toEqual({ reviewed: 2, endedEarly: false });
+    expect(deck.cards[0]!.state.repetitions).toBe(1);
+  });
+
+  it("puts the failed card behind the others, not immediately in front", async () => {
+    const deck = deckOf("a", "b");
+    const s = scripted(["", "1", "", "3", "", "3"]); // a=again, b=good, a=good
+    await runSession(deck, NOW, s.io);
+
+    // The front line is wrapped in ANSI codes, so pull the id out by pattern
+    // rather than by position.
+    const order = s.printed
+      .map((l) => /front (\w+)/.exec(l)?.[1])
+      .filter((id): id is string => id !== undefined);
+    expect(order).toEqual(["a", "b", "a"]);
+  });
+
+  it("carries the ease drop into the retry rather than restarting the card", async () => {
+    const twice = deckOf("a");
+    const once = deckOf("a");
+    await runSession(twice, NOW, scripted(["", "1", "", "1", "", "3"]).io);
+    await runSession(once, NOW, scripted(["", "1", "", "3"]).io);
+
+    expect(twice.cards[0]!.state.ease).toBeLessThan(once.cards[0]!.state.ease);
+  });
+
+  it("keeps a lapsed card scheduled for tomorrow as well as re-showing it", async () => {
+    const deck = deckOf("a");
+    await runSession(deck, NOW, scripted(["", "1"]).io);
+    expect(deck.cards[0]!.dueAt).toBe("2026-09-08");
+  });
+});

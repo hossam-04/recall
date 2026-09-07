@@ -251,3 +251,39 @@ understanding.
 
 *Would revisit if:* this needed down-migrations or non-transactional operations
 like `create index concurrently`, both of which the sixty lines do not handle.
+
+---
+
+## ADR-009 — A failed card comes back in the same session
+
+**Decision:** Grading a card `again` puts it at the back of the session's queue,
+so it returns before you stand up. It is also scheduled for tomorrow, as before.
+
+*Alternatives:* leave it (the card is scheduled for tomorrow and the session
+moves on); re-show it immediately rather than at the back; cap the number of
+retries per card per session.
+
+**Why:** this was not originally a decision — it fell out of computing the due
+queue once, up front, and iterating it. The effect was that pressing "again",
+which means *I do not know this*, was answered with "see you tomorrow". That
+does not match what the button says.
+
+Back of the queue rather than immediately, so the other cards act as a small
+delay. Re-showing instantly tests short-term memory, which is the thing spaced
+repetition exists to avoid measuring.
+
+**Deliberately unbounded.** Keep failing a card and it keeps returning. A cap
+would mean the session ends with a card you have not answered correctly, which
+is the state the re-queue exists to prevent.
+
+**Each answer applies normally, including the ease penalty**, so failing the
+same card three times costs ease three times. That is not double-counting — it
+is evidence the card is hard — and the 1.3 floor bounds how far it can fall.
+Anki does not re-penalise within a session; this deliberately differs.
+
+The retry receives the *graded* card, not the original, so the ease drop carries
+into the next attempt rather than being discarded.
+
+*Would revisit if:* sessions start ending because one card is unlearnable and
+the queue will not drain. The fix then is a cap plus a "leech" flag on the card,
+not removing the re-queue.

@@ -19,14 +19,29 @@ export type SessionIO = {
   print: (line: string) => void;
 };
 
-export type SessionResult = { reviewed: number; endedEarly: boolean };
+export type SessionResult = {
+  /** Answers given. A card failed twice and then passed counts as three. */
+  reviewed: number;
+  endedEarly: boolean;
+};
 
 export async function runSession(deck: Deck, now: Date, io: SessionIO): Promise<SessionResult> {
-  const queue = dueCards(deck, now);
+  // A work queue rather than a snapshot: grading `again` puts the card back at
+  // the end of the line, so "I don't know this" is not answered with "see you
+  // tomorrow". A lapsed card is still *scheduled* for tomorrow — it just also
+  // comes round again before you stand up.
+  //
+  // Deliberately unbounded: keep failing a card and it keeps returning, which
+  // is what the button means. Each answer applies normally, so failing the same
+  // card three times costs ease three times. That is not double-counting — it
+  // is evidence the card is hard — and the 1.3 floor bounds how far it falls.
+  const pending = dueCards(deck, now);
   let reviewed = 0;
 
   try {
-    for (const card of queue) {
+    while (pending.length > 0) {
+      const card = pending.shift()!;
+
       io.print(`\x1b[1m${card.front}\x1b[0m`);
       await io.ask("  [enter to reveal] ");
       io.print(`  ${card.back}\n`);
@@ -37,10 +52,18 @@ export async function runSession(deck: Deck, now: Date, io: SessionIO): Promise<
       await io.save(deck);
 
       reviewed++;
-      io.print(
-        `  → back in ${graded.state.intervalDays}d (${graded.dueAt}), ` +
-        `ease ${graded.state.ease.toFixed(2)}\n`,
-      );
+
+      if (grade === "again") {
+        // Push the *graded* card, not the original, so the ease drop it just
+        // took carries into the next attempt.
+        pending.push(graded);
+        io.print(`  → again later this session; scheduled ${graded.dueAt}\n`);
+      } else {
+        io.print(
+          `  → back in ${graded.state.intervalDays}d (${graded.dueAt}), ` +
+          `ease ${graded.state.ease.toFixed(2)}\n`,
+        );
+      }
     }
   } catch (error) {
     if (!(error instanceof InputClosed)) throw error;
