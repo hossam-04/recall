@@ -366,3 +366,77 @@ a *user* cascades down to their cards, hits the restrict on `reviews`, and the
 whole delete rolls back. **Account deletion is currently impossible.** Nothing
 deletes users today either, so this is recorded rather than fixed — but it is a
 decision now owned, not an accident.
+
+---
+
+## ADR-012 — Integration tests get a fresh database per run and a truncate between tests
+
+**Decision:** `globalSetup` drops, recreates and migrates a `_test` database
+once per run. Test files that touch it call `useCleanDatabase()`, which
+truncates every table between tests. The migration runner's own tests get a
+throwaway database each, via `withScratchDatabase`.
+
+*Alternatives:* wrap each test in a transaction and roll it back — the fastest
+option and the usual advice. Truncate without recreating. A schema per test.
+
+**Why not transaction-per-test.** Two failure modes, both demonstrated rather
+than assumed:
+
+1. **Postgres has no nested transactions.** With the harness holding one open,
+   the code under test issuing its own `begin` gets a *warning* and a no-op, its
+   `commit` commits the harness's transaction, and the harness's `rollback` finds
+   nothing to undo. Rows survive a test that believed it cleaned up — and nothing
+   fails, so the damage lands on whichever test runs next. That hits exactly the
+   code most worth testing: the migration runner manages its own transactions,
+   and so will the grading path.
+2. **One expected failure poisons the rest.** After a constraint fires, every
+   later statement in that transaction returns "current transaction is aborted".
+   The eight probes that were run by hand only worked because psql's
+   `ON_ERROR_ROLLBACK` wraps each statement in an implicit savepoint; vitest has
+   no such thing.
+
+Savepoints answer both, but only by rewriting `begin`/`commit` into
+`savepoint`/`release` under test — which means what runs in the test is not what
+ships.
+
+**Why recreate rather than reuse:** it makes "the migrations apply to an empty
+database" a property checked on every run. That is the done condition, and a
+database migrated weeks ago never tests it. Costs a few hundred milliseconds,
+once.
+
+**Consequence:** the whole suite now needs Postgres, including the pure M1 unit
+tests. Accepted — the done condition already required it.
+
+*Would revisit if:* the suite grows enough that per-test truncation is
+measurable, at which point the answer is parallel databases, not rollback.
+
+---
+
+## ADR-013 — Refuted: the migration runner's transaction was not what made it atomic
+
+**Decision:** recorded as a refutation. `tests/db/migrate.test.ts` had a test
+asserting that a migration failing on its second statement leaves no trace of
+the first. Deleting `begin` and `commit` from the runner entirely **left that
+test passing.**
+
+**Why:** `pg` sends a whole migration file to the server as one simple-query
+message, and Postgres wraps a multi-statement simple query in an implicit
+transaction. The rollback the test was crediting to our code is Postgres's. The
+assertion is true and tests nothing we wrote.
+
+This is the same shape as the M1 timezone test, which passed because 23:00 at
+UTC+3 happens to fall on the same date under `toISOString`. Both were found the
+same way — by breaking the code and watching the test not care.
+
+**What the explicit transaction actually buys:** the schema change and the
+`schema_migrations` row commit together. Without it, a failure between them
+leaves a migrated database that believes it was never migrated, and the next run
+turns that into "table already exists" with no path forward but by hand. There is
+now a test that pins that, using a trigger on `schema_migrations` to stand in for
+the process dying at the wrong moment — verified to fail when `begin`/`commit`
+are removed.
+
+**The general lesson, worth more than the fix:** a passing test is evidence only
+after you have seen it fail. Neither of these was written badly; both were
+written against an assumption about *which* component was providing the
+behaviour.
