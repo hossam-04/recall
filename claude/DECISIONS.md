@@ -287,3 +287,82 @@ into the next attempt rather than being discarded.
 *Would revisit if:* sessions start ending because one card is unlearnable and
 the queue will not drain. The fix then is a cap plus a "leech" flag on the card,
 not removing the re-queue.
+
+---
+
+## ADR-010 — Store both the scheduler state and the review events
+
+**Decision:** `cards` holds what SM-2 decided (repetitions, interval, ease, due
+date); `reviews` holds one immutable row per answer. Both are written in the
+same transaction. Migration `002_decks_and_cards.sql`.
+
+*Alternatives:* state only, with grading as a bare `UPDATE`. Events only, with
+state replayed through SM-2 on every read. State plus denormalised counters
+(`total_reviews`, `lapses`) on the card, which is what Anki does.
+
+**Why not events only:** it is the shape ADR-005 already rejected. Replaying
+history under today's constants means changing a constant retroactively moves
+cards that were scheduled under the old one. A stored decision is immutable; a
+recomputed one is not.
+
+**Why not state only:** `repetitions` resets to zero on a failure, so it is the
+current streak and not a count. Nothing in the row records how many reviews
+there were, and retention is a fraction that needs that denominator. M5 exists
+to measure whether generated cards are worse than hand-written ones, and it
+cannot ask that question without one.
+
+**Why not counters:** they close the denominator gap, and they were the right
+thing to reach for. Two things defeat them. They have no time axis, so "did the
+cards generated after the prompt changed do better?" is unanswerable, and
+neither is the shape that actually distinguishes a badly-worded generated card
+(fails once or twice, then fine forever) from a wrong one (fails indefinitely) —
+over a lifetime both land on similar totals. And a counter is derived state with
+nothing to check it against: if a bug increments it on the wrong branch, the
+number is wrong permanently and undetectably.
+
+**The property that decided it.** State is a function of events; events are not
+recoverable from state. So storing both costs one `INSERT` per grade and buys an
+audit — a test can replay a card's log and assert the stored state matches,
+which is an authority over our own code that nothing else in this project has.
+Counters take on the same duplication with none of that.
+
+**Honest limitation:** each review row also stores the interval and ease it
+produced, which makes the log say what happened at the time rather than only
+what was answered. That means the replay audit is valid only while the scheduler
+constants are unchanged. After a change, the stored outcomes are the record and
+replay is *expected* to diverge — the test must be scoped to say so rather than
+being treated as a permanent invariant.
+
+*Would revisit if:* `count(*)` over `reviews` becomes a measurably slow query,
+at which point the counters get denormalised onto `cards` — with the events
+still present to rebuild them from.
+
+---
+
+## ADR-011 — `reviews` references `cards` with `on delete restrict`
+
+**Decision:** deleting a card that has been reviewed is refused by the database.
+
+*Alternatives:* `on delete cascade`, which was what the first draft said. A soft
+delete — `cards.deleted_at`, rows never physically removed.
+
+**Why:** the cards most likely to be deleted are the generated ones that turned
+out to be bad, and their history is exactly what M5 measures. Cascade would
+erase the evidence at the moment it became interesting — the same "events cannot
+be backfilled" argument that ruled out storing state alone, reintroduced through
+the delete path. Soft delete is probably the eventual answer, but it puts a
+`where deleted_at is null` on every card query from now on, and forgetting it
+once resurrects deleted cards.
+
+Nothing deletes a card yet (deck management is M3), so restrict costs nothing
+today and makes the database refuse rather than silently lose data. When M3 adds
+a delete button it will fail loudly and the real decision gets made with the UI
+in hand, instead of having been made by default in a migration written weeks
+earlier.
+
+**Consequence, found by probing rather than by reasoning:** restrict propagates
+back up every cascade path. `users → decks → cards` are all cascade, so deleting
+a *user* cascades down to their cards, hits the restrict on `reviews`, and the
+whole delete rolls back. **Account deletion is currently impossible.** Nothing
+deletes users today either, so this is recorded rather than fixed — but it is a
+decision now owned, not an accident.
