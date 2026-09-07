@@ -7,14 +7,16 @@ code alone does not carry.
 
 ## Current state
 
-**Session 1 — M1 is done. There is a working scheduler and a CLI that uses it.**
+**Session 1 — M1 done. M2 started: migrations run, users and sessions exist.**
 
 ```
 $ npm run verify
 tsc --noEmit   → clean
-vitest run     → 5 files, 34 tests passed
+vitest run     → 5 files, 41 tests passed
 $ echo $?
 0
+$ npm run migrate
+No pending migrations.
 ```
 
 SM-2 with a fourth grade scale, an ease factor kept separate from the streak,
@@ -33,10 +35,32 @@ Three things were verified by breaking them rather than by assertion:
   the stream closes first. A prompt that cannot be answered is a hang, not an
   error, and nothing reports it.
 
-**What is deliberately not done:** no database, no server, no UI, no LLM code.
-`verify` still runs typecheck and unit tests only — migrations, integration
-tests and Playwright join it as their milestones land. The readline adapter
-(~15 lines) has no automated test; see ADR-006.
+### M1 was read back line by line, and that found four defects
+
+Requested explicitly ("I want to understand the M1 code fully") and worth the
+time — **none of these would have been found by running the app.**
+
+| Found by reading | Status |
+|---|---|
+| `createCard` aliased the module-level `newCard`, so every card shared one state object | fixed — copy per card |
+| `again` scheduled for tomorrow and never re-showed in the session | fixed — re-queue, ADR-009 |
+| `summarise` returned a sentence that `review.ts` string-matched for control flow | fixed |
+| `main()` had no rejection handler — stack traces instead of messages | fixed |
+
+### M2 so far
+
+`migrations/001_users_and_sessions.sql` is applied. The runner
+(`src/db/migrate.ts`) applies plain SQL in filename order, each in its own
+transaction, and refuses to run if an already-applied file's checksum changed
+(ADR-008 — verified by editing an applied file and watching it refuse).
+Sessions are database rows, not JWTs (ADR-007).
+
+**What is deliberately not done:** no server, no UI, no LLM code, and no
+`decks`/`cards`/`reviews` tables yet — that schema is blocked on the open
+question below. `verify` still runs typecheck and unit tests only; there is **no
+integration-test harness against a real database yet**, which is the first thing
+M2 needs after the schema. The readline adapter (~15 lines) has no automated
+test; see ADR-006.
 
 **Session 0** set up the toolchain, the three project logs, and a strict
 `tsconfig`. Postgres 18.6 runs as a brew service and the `recall` database
@@ -149,15 +173,35 @@ when its milestone arrives: `fastify`, `pg`, `zod`, `argon2`, `react`, `vite`,
 
 ## Next up
 
-M2: Postgres schema and migrations, then Fastify, then session auth. The bar is
-`./scripts/api-smoke.sh` exiting 0 — sign up, log in, create a deck, submit
-reviews, and a second user getting 403 on the first user's deck.
+**Blocked on one unanswered question** — the `decks`/`cards`/`reviews` schema
+cannot be written until it is settled:
 
-The prediction question to answer before any schema is written:
+> A *review* is an event: "card 17, graded `good`, 2026-09-07". A card's *state*
+> — repetitions, ease, intervalDays, dueAt — is what those events add up to.
+>
+> - **(a) State only.** `cards` holds the four fields; grading is an `UPDATE`.
+>   Nothing records that the review happened.
+> - **(b) Events only.** One row per answer in `reviews`; state is not stored,
+>   it is replayed through SM-2 on demand.
+> - **(c) Both**, written in one transaction.
+>
+> Which, and what breaks in the other two? Prompts: (1) M5 measures whether
+> AI-generated cards are worse than hand-written ones — what data does that
+> need, and does (a) have it? (2) (b) recomputes state from history, which is
+> the thing ADR-005 rejected — why? (3) (c) stores the same fact twice; what is
+> the failure mode and what prevents it?
 
-> A review is an event that happened, and a card's state is what those events
-> add up to. Store both, or store only one and derive the other? What breaks in
-> each direction?
+Then, in order: the integration-test harness against a real database, Fastify,
+and session auth. The M2 bar is `./scripts/api-smoke.sh` exiting 0 — sign up,
+log in, create a deck, submit reviews, and a second user getting 403 on the
+first user's deck.
+
+Answered in session 1, for the record: *should a card on its 4th correct review
+get the same interval as one on its 1st?* — "no, the 4th should take a longer
+interval", then "b should be shorter, maybe number of fails" for the follow-up.
+Both correct in direction; SM-2 uses a recovering multiplier rather than a
+counter, for the reasons in ADR-004's neighbours. The absolute-vs-relative
+due-date question was answered "(a)", correctly — see ADR-005.
 
 Answered in session 1, for the record: *should a card on its 4th correct review
 get the same interval as one on its 1st?* — "no, the 4th should take a longer
