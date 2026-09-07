@@ -1,4 +1,6 @@
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
+import type { Pool } from "pg";
+import { registerUserRoutes } from "./routes/users.js";
 import type { ZodType } from "zod";
 
 /**
@@ -12,7 +14,13 @@ function clientErrorStatus(error: unknown): number | undefined {
   return typeof status === "number" && status >= 400 && status < 500 ? status : undefined;
 }
 
-export function buildServer(): FastifyInstance {
+/**
+ * The pool is passed in rather than read from the module singleton, so a test
+ * server talks to the test database and can never reach the development one by
+ * accident. Same argument as ADR-006: injected dependencies are the difference
+ * between something you can assert against and something you can only run.
+ */
+export function buildServer(pool: Pool): FastifyInstance {
   const app = Fastify({ logger: false });
 
   /**
@@ -34,6 +42,7 @@ export function buildServer(): FastifyInstance {
   });
 
   app.get("/health", async () => ({ ok: true }));
+  registerUserRoutes(app, pool);
 
   return app;
 }

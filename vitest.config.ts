@@ -17,5 +17,15 @@ export default defineConfig({
     // the done condition is already "from a clean checkout against an empty
     // database, npm run verify exits 0".
     globalSetup: ["tests/support/global-setup.ts"],
+
+    // Test FILES run in parallel by default, and every database test shares one
+    // database — so one file's truncate empties the table another file is
+    // midway through asserting on. The symptom is 5-7 failures per run, drifting
+    // between runs and between files, which reads like a dozen unrelated bugs.
+    //
+    // Sequential files is the cheap correct answer at this size (~1s). The
+    // scalable one is a database per worker, keyed on VITEST_POOL_ID — worth
+    // doing when the suite is slow enough to care, not before.
+    fileParallelism: false,
   },
 });

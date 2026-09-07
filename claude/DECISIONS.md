@@ -410,6 +410,23 @@ tests. Accepted — the done condition already required it.
 *Would revisit if:* the suite grows enough that per-test truncation is
 measurable, at which point the answer is parallel databases, not rollback.
 
+**Correction, added the same session this was written.** The line above treats a
+database per worker as a performance upgrade. It is a *correctness* requirement,
+and this ADR missed it. Vitest runs test **files** in parallel by default, so the
+moment a second database-touching file existed, one file's truncate began
+emptying tables another file was midway through asserting on. The suite failed 5
+to 7 tests per run, drifting between runs — the earlier green runs were luck,
+not evidence.
+
+Fixed with `fileParallelism: false`, verified by five consecutive clean runs.
+The cost is 0.7s to 3.4s. A database per worker keyed on `VITEST_POOL_ID` is
+still the scalable answer, and is now recorded as the fix for a slow suite
+rather than as a nicety.
+
+**Worth noticing about the failure**: it did not look like one bug. It looked
+like a dozen unrelated ones, in files that had nothing to do with each other,
+changing between runs. Shared mutable state under concurrency generally does.
+
 ---
 
 ## ADR-013 — Refuted: the migration runner's transaction was not what made it atomic
@@ -440,3 +457,33 @@ are removed.
 after you have seen it fail. Neither of these was written badly; both were
 written against an assumption about *which* component was providing the
 behaviour.
+
+---
+
+## ADR-014 — Registration admits a taken email; login must not
+
+**Decision:** `POST /users` answers **409** with "Email already registered".
+Login, when it is built, returns one identical response for "no such user" and
+"wrong password" — and hashes a dummy password when the user does not exist, so
+the two take the same time.
+
+*Alternatives:* answer 201 whatever happens and email the address instead, which
+is what a service with outbound mail does.
+
+**Why:** 409 leaks which emails have accounts — user enumeration, the input to
+credential stuffing and targeted phishing. It is accepted here because
+registration is the one place the leak cannot be fully closed: a real person who
+already has an account has to be told so, or the form is broken. Closing it
+properly needs outbound email, which is out of scope.
+
+Login is different: nothing is lost by refusing to say which half was wrong, so
+there the non-disclosure is free and it is where the attack actually lands.
+
+**The part that is easy to miss:** identical *messages* are not enough. Verifying
+a password takes ~50ms of deliberate work; returning early for an unknown user
+takes under 1ms. That difference is measurable over the network and answers the
+question the message refused to. The dummy hash exists to spend the same time,
+and it only works if it is a real argon2 verification rather than a sleep.
+
+*Would revisit if:* this ever leaves localhost, at which point registration gets
+rate-limited per IP, which is the actual mitigation for enumeration at scale.

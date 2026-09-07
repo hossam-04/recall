@@ -1,21 +1,24 @@
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { buildServer, parseBody } from "../../src/http/server.js";
+import { testPool, useCleanDatabase } from "../support/db.js";
 
 /**
  * `app.inject()` runs a request through the full Fastify stack — routing,
  * parsing, error handling — without opening a socket. No port to pick, nothing
  * left listening if a test throws, and the tests run in parallel safely.
  */
+useCleanDatabase();
+
 describe("the HTTP boundary", () => {
   test("serves health and 404s an unknown route", async () => {
-    const app = buildServer();
+    const app = buildServer(testPool());
     expect((await app.inject({ method: "GET", url: "/health" })).json()).toEqual({ ok: true });
     expect((await app.inject({ method: "GET", url: "/nope" })).statusCode).toBe(404);
   });
 
   test("a thrown non-Error still becomes a 500, and leaks nothing", async () => {
-    const app = buildServer();
+    const app = buildServer(testPool());
     // JavaScript lets you throw anything. A handler that assumes `error.message`
     // exists would itself throw inside the error handler.
     app.get("/boom", async () => {
@@ -29,7 +32,7 @@ describe("the HTTP boundary", () => {
   });
 
   test("malformed JSON is the framework's 400, not ours", async () => {
-    const app = buildServer();
+    const app = buildServer(testPool());
     app.post("/echo", async () => ({ ok: true }));
 
     const response = await app.inject({
@@ -46,7 +49,7 @@ describe("parseBody", () => {
   const CreateDeck = z.object({ name: z.string().min(1) });
 
   function route() {
-    const app = buildServer();
+    const app = buildServer(testPool());
     app.post("/decks", async (request, reply) => {
       const body = parseBody(CreateDeck, request.body, reply);
       if (body === undefined) return;
