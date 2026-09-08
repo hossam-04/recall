@@ -487,3 +487,57 @@ and it only works if it is a real argon2 verification rather than a sleep.
 
 *Would revisit if:* this ever leaves localhost, at which point registration gets
 rate-limited per IP, which is the actual mitigation for enumeration at scale.
+
+---
+
+## ADR-015 — Session cookies are hand-rolled; the flags are the security
+
+**Decision:** `serializeCookie` writes `HttpOnly; SameSite=Lax; Path=/;
+Max-Age=…`, plus `Secure` when `NODE_ENV=production`. Session ids are 32 bytes
+from `randomBytes`, base64url. Logout deletes the row, not just the cookie.
+
+*Alternatives:* `@fastify/cookie`.
+
+**Why hand-rolled:** session issue/verify/revoke is on the hand-rolled list in
+`CLAUDE.md`, and the whole security value here is four flags and one random
+number. A library would set them correctly and teach nothing.
+
+- **HttpOnly** — invisible to `document.cookie`, so an XSS bug cannot exfiltrate
+  the session. This is exactly what JWT-in-localStorage gives up (ADR-007).
+- **SameSite=Lax** — not sent on cross-site POSTs, which closes the common CSRF
+  shape for free. Lax rather than Strict so following a link into the app still
+  arrives logged in. A CSRF token is still coming; Lax is not a substitute on
+  older browsers or same-site subdomains.
+- **Secure** — off on localhost only because there is no TLS here and the cookie
+  would silently never be set. The one flag that must flip on deployment.
+
+**Logout deletes the row.** Clearing the cookie only asks the client to forget;
+a copied cookie would still work. Revocability is the entire reason sessions
+were chosen over JWTs, and it only exists if logout uses it.
+
+*Would revisit if:* the API is ever called cross-origin, which needs
+`SameSite=None; Secure` and makes the CSRF token load-bearing rather than
+defence in depth.
+
+---
+
+## ADR-016 — Uniqueness is not entropy: a test that passed against `Math.random`
+
+**Decision:** recorded as a caught near-miss. The first session-id test asserted
+500 ids were distinct and matched `[A-Za-z0-9_-]{43}`. Replacing `randomBytes`
+with `Math.random().toString(36).padEnd(43, "x")` **passed all six tests.**
+
+`Math.random` is seeded from the clock and its state is recoverable from a
+handful of outputs — a predictable session id is not a weakness, it is the
+authentication system handed over. The test named the property it cared about in
+its title and then checked two properties that a broken implementation also has.
+
+**What now checks it:** the symbol alphabet (base64url uses 64; base36 uses 36)
+and per-byte-position distinctness across 500 ids. Neither proves
+cryptographic strength — nothing in a unit test can — but both bite on the
+realistic failures: a non-CSPRNG source, a truncated id, a padded id.
+
+**Third time this pattern has appeared** — the M1 timezone test, the migration
+transaction test, and now this. All three passed, and all three were measuring
+something other than what their name claimed. The only reliable way any of them
+surfaced was breaking the code and watching the test not care.

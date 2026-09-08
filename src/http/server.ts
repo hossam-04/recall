@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import type { Pool } from "pg";
+import { registerSessionRoutes } from "./routes/sessions.js";
 import { registerUserRoutes } from "./routes/users.js";
 import type { ZodType } from "zod";
 
@@ -43,6 +44,7 @@ export function buildServer(pool: Pool): FastifyInstance {
 
   app.get("/health", async () => ({ ok: true }));
   registerUserRoutes(app, pool);
+  registerSessionRoutes(app, pool);
 
   return app;
 }
