@@ -541,3 +541,73 @@ realistic failures: a non-CSPRNG source, a truncated id, a padded id.
 transaction test, and now this. All three passed, and all three were measuring
 something other than what their name claimed. The only reliable way any of them
 surfaced was breaking the code and watching the test not care.
+
+---
+
+## ADR-017 — Authorisation lives in the SQL, not in a check beside it
+
+**Decision:** every query that touches a user's data carries the ownership
+predicate itself. `insert into cards ... select id from decks where id = $1 and
+user_id = $4` matches nothing for someone else's deck; the due-cards query joins
+through `decks` and filters on `user_id`; grading selects the card through the
+same join before touching it.
+
+*Alternatives:* fetch the row, then compare `row.userId` to the session in
+JavaScript. `GET /decks/:id` does exactly that, because it has to distinguish
+404 from 403.
+
+**Why:** the JavaScript version is correct until someone adds a route and
+forgets it, and nothing fails when they do — the endpoint simply returns data it
+should not. Putting the predicate in the statement means a missing check is a
+query that returns no rows, which surfaces as a 404 in a test rather than as a
+leak in production. Sabotage confirmed it: removing `where user_id = $1` from the
+deck listing failed two tests immediately.
+
+**Where the JavaScript check survives**, `GET /decks/:id` returns 403 rather than
+404 for someone else's deck — deliberate for a localhost tool where the honest
+answer helps, and the wrong default for a public service, where 404 leaks
+nothing. That one route therefore has to load the row and compare, and it is the
+only place ownership is checked outside SQL.
+
+---
+
+## ADR-018 — Grading locks the card row: `select ... for update`
+
+**Decision:** the review transaction selects the card `for update` before
+computing the next state.
+
+**Why:** grading is read-modify-write — read ease, run SM-2, write ease. Two
+grades submitted at once (a double-tap, two tabs, a retried request) can both
+read ease 2.5, and the second write silently discards the first. That is a lost
+update, and it is invisible: no error, no constraint violation, just one review
+that did not count. `for update` makes the second transaction wait for the
+first, so it reads the value the first one wrote.
+
+*Alternatives:* optimistic concurrency with a version column, which is better
+under contention and needs a retry loop; doing nothing, which is what most
+tutorials do.
+
+*Would revisit if:* this ever serves enough concurrent traffic that holding a
+row lock across the transaction matters. At one user on localhost it does not.
+
+---
+
+## ADR-019 — The smoke test drives a real socket, because `inject()` never does
+
+**Decision:** `scripts/api-smoke.sh` starts the actual server on port 3999
+against a throwaway database and drives it with `curl`. It is part of
+`npm run verify`.
+
+**Why:** every other test uses Fastify's `inject()`, which runs the framework
+stack in-process without opening a socket. That is the right default — fast, no
+port to pick, nothing left listening. But it means nothing else in the suite
+exercises `app.listen`, real HTTP parsing, real `Set-Cookie` round-tripping
+through a client that stores and re-sends it, or the migrate-on-boot path in
+`src/index.ts`. All of those can break with every unit test green.
+
+It also checks the two things that are only true end to end: that a review
+writes both the card state and an event row (`select count(*) from reviews`),
+and that a logged-out cookie stops working.
+
+*Would revisit if:* it becomes slow enough to discourage running `verify`. It is
+about four seconds.

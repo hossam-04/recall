@@ -48,9 +48,11 @@ describe("the HTTP boundary", () => {
 describe("parseBody", () => {
   const CreateDeck = z.object({ name: z.string().min(1) });
 
+  // A path of its own: the real /decks now exists on every server, and a test
+  // that reuses it would be testing that route instead of parseBody.
   function route() {
     const app = buildServer(testPool());
-    app.post("/decks", async (request, reply) => {
+    app.post("/parse-body-probe", async (request, reply) => {
       const body = parseBody(CreateDeck, request.body, reply);
       if (body === undefined) return;
       // The handler only ever sees declared fields — see the strip test below.
@@ -60,7 +62,7 @@ describe("parseBody", () => {
   }
 
   test("accepts a valid body", async () => {
-    const response = await route().inject({ method: "POST", url: "/decks", payload: { name: "Algorithms" } });
+    const response = await route().inject({ method: "POST", url: "/parse-body-probe", payload: { name: "Algorithms" } });
     expect(response.statusCode).toBe(201);
     expect(response.json()).toEqual({ received: { name: "Algorithms" } });
   });
@@ -70,7 +72,7 @@ describe("parseBody", () => {
     // deck in someone else's account. It is not rejected — it never arrives.
     const response = await route().inject({
       method: "POST",
-      url: "/decks",
+      url: "/parse-body-probe",
       payload: { name: "Algorithms", user_id: 7 },
     });
     expect(response.statusCode).toBe(201);
@@ -86,7 +88,7 @@ describe("parseBody", () => {
     ];
 
     for (const [payload, field, message] of cases) {
-      const response = await route().inject({ method: "POST", url: "/decks", payload: payload as object });
+      const response = await route().inject({ method: "POST", url: "/parse-body-probe", payload: payload as object });
       expect(response.statusCode, JSON.stringify(payload)).toBe(400);
       const [issue] = response.json().details;
       expect(issue.field, JSON.stringify(payload)).toBe(field);

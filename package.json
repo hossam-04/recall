@@ -10,9 +10,12 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "verify": "npm run typecheck && npm run test",
+    "verify": "npm run typecheck && npm run test && npm run smoke",
     "review": "tsx --env-file-if-exists=.env src/cli/review.ts",
-    "migrate": "tsx --env-file-if-exists=.env scripts/migrate.ts"
+    "migrate": "tsx --env-file-if-exists=.env scripts/migrate.ts",
+    "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
+    "start": "tsx --env-file-if-exists=.env src/index.ts",
+    "smoke": "./scripts/api-smoke.sh"
   },
   "devDependencies": {
     "@types/node": "^26.4.1",
