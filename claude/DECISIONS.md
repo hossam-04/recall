@@ -611,3 +611,51 @@ and that a logged-out cookie stops working.
 
 *Would revisit if:* it becomes slow enough to discourage running `verify`. It is
 about four seconds.
+
+---
+
+## ADR-020 — Authentication is default-deny, and the tests read the real route table
+
+**Decision:** a global `preHandler` authenticates every request whose route is
+not in an explicit `PUBLIC_ROUTES` set (`GET /health`, `POST /users`,
+`POST /sessions`, `DELETE /sessions`). Handlers call `currentUser(request)`,
+which throws if the hook did not run. Two tests enumerate
+`app.routeTable` — collected from Fastify's `onRoute` hook — and assert that
+every non-public route is 401 without a session, and that no route lets one user
+reach another user's data.
+
+*Alternatives:* what was there before — each route calling `requireSession`
+first. A route-registration wrapper that takes authentication as an argument.
+
+**Why this was needed, and how it was found.** Asked to describe what happens
+when someone adds a route and forgets authorisation, the answer given was "it
+leaks" — and that was right, against a question that assumed otherwise. ADR-017
+puts the ownership predicate in the SQL, which turns a *partial* mistake into
+empty results, but it does nothing about a route that never tried. Four routes
+were correct because they were written carefully, which is precisely the
+guarantee ADR-017 was supposed to replace.
+
+The failure mode matters: forgetting fails **open**. Nothing errors, no test
+goes red, and the endpoint quietly serves data it should not. Default-deny
+inverts that — a forgotten route is 401 for everyone, including its author,
+which is a bug report on the first manual test.
+
+**Why the tests read the route table rather than a list.** A hand-written list
+of routes to check is the exact thing a new route forgets to be added to; the
+suite would stay green while the endpoint leaked. Reading Fastify's own table
+means adding a route automatically extends the test. Verified by sabotage:
+adding a `GET /decks/:id/stats` that queries `cards` by `deck_id` with no
+ownership predicate failed the cross-user test immediately.
+
+**A real inconsistency this surfaced on its first run.**
+`GET /decks/:id/cards/due` answered **200 with `[]`** for a deck the caller does
+not own. Nothing leaked — the join filtered it — but the request *succeeded*
+against someone else's deck, and the sibling route returned 403 for the same
+thing. Three deck-scoped routes were each deciding independently what "not
+yours" means. They now share `requireOwnedDeck`, which gives one answer: 404 if
+it does not exist, 403 if it is not yours.
+
+**What this does not do:** it cannot enforce *authorisation*, only
+authentication. Whether this user may touch that row is per-route data logic.
+The cross-user test is the safety net there, and it is a net rather than a
+guarantee — it can only substitute ids into routes it recognises.

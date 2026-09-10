@@ -1,7 +1,7 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
-import { requireSession } from "../auth.js";
+import { currentUser } from "../auth.js";
 import { parseBody } from "../server.js";
 
 /**
@@ -13,12 +13,47 @@ const CreateDeck = z.object({ name: z.string().trim().min(1).max(100) });
 
 type Deck = { id: string; name: string; createdAt: Date };
 
+/**
+ * Resolves a deck the caller owns, answering the client itself otherwise.
+ *
+ * Extracted because three routes are scoped to a deck and each was deciding
+ * independently what "not yours" means — one of them returned 200 with an empty
+ * list, which leaks nothing but lets a request succeed against a deck that is
+ * not the caller's. The cross-user test in tests/http/authorization.test.ts
+ * caught it. One helper means one answer.
+ */
+export async function requireOwnedDeck(
+  pool: Pool,
+  deckId: string,
+  userId: string,
+  reply: FastifyReply,
+): Promise<Deck | undefined> {
+  const { rows } = await pool.query<Deck & { ownerId: string }>(
+    `select id, name, created_at as "createdAt", user_id as "ownerId"
+       from decks where id = $1`,
+    [deckId],
+  );
+  const deck = rows[0];
+  if (deck === undefined) {
+    await reply.status(404).send({ error: "No such deck" });
+    return undefined;
+  }
+  // 403 rather than 404: this is localhost and the honest answer is more useful
+  // than hiding whether the deck exists. A public service would prefer 404,
+  // which leaks nothing.
+  if (deck.ownerId !== userId) {
+    await reply.status(403).send({ error: "Not your deck" });
+    return undefined;
+  }
+  const { ownerId: _ownerId, ...visible } = deck;
+  return visible;
+}
+
 const UNIQUE_VIOLATION = "23505";
 
 export function registerDeckRoutes(app: FastifyInstance, pool: Pool): void {
   app.post("/decks", async (request, reply) => {
-    const userId = await requireSession(pool, request, reply);
-    if (userId === undefined) return;
+    const userId = currentUser(request);
 
     const body = parseBody(CreateDeck, request.body, reply);
     if (body === undefined) return;
@@ -40,8 +75,7 @@ export function registerDeckRoutes(app: FastifyInstance, pool: Pool): void {
   });
 
   app.get("/decks", async (request, reply) => {
-    const userId = await requireSession(pool, request, reply);
-    if (userId === undefined) return;
+    const userId = currentUser(request);
 
     // The `where user_id` is the authorisation. Filtering in JavaScript after
     // selecting everything would work until the first time someone forgets.
@@ -54,25 +88,8 @@ export function registerDeckRoutes(app: FastifyInstance, pool: Pool): void {
   });
 
   app.get<{ Params: { id: string } }>("/decks/:id", async (request, reply) => {
-    const userId = await requireSession(pool, request, reply);
-    if (userId === undefined) return;
-
-    const { rows } = await pool.query<Deck & { ownerId: string }>(
-      `select id, name, created_at as "createdAt", user_id as "ownerId"
-         from decks where id = $1`,
-      [request.params.id],
-    );
-    const deck = rows[0];
-    if (deck === undefined) return await reply.status(404).send({ error: "No such deck" });
-
-    // 403 rather than 404: this is localhost and the honest answer is more
-    // useful than hiding whether the deck exists. A public service would weigh
-    // that differently — 404 leaks nothing.
-    if (deck.ownerId !== userId) {
-      return await reply.status(403).send({ error: "Not your deck" });
-    }
-
-    const { ownerId: _ownerId, ...visible } = deck;
-    return visible;
+    const deck = await requireOwnedDeck(pool, request.params.id, currentUser(request), reply);
+    if (deck === undefined) return;
+    return deck;
   });
 }

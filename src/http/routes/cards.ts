@@ -1,8 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
-import { requireSession } from "../auth.js";
+import { currentUser } from "../auth.js";
 import { parseBody } from "../server.js";
+import { requireOwnedDeck } from "./decks.js";
 import { review } from "../../scheduler/sm2.js";
 import { toDateString, addDays } from "../../scheduler/deck.js";
 
@@ -19,10 +20,10 @@ type CardRow = {
 
 export function registerCardRoutes(app: FastifyInstance, pool: Pool): void {
   app.post<{ Params: { id: string } }>("/decks/:id/cards", async (request, reply) => {
-    const userId = await requireSession(pool, request, reply);
-    if (userId === undefined) return;
+    const userId = currentUser(request);
     const body = parseBody(CreateCard, request.body, reply);
     if (body === undefined) return;
+    if ((await requireOwnedDeck(pool, request.params.id, userId, reply)) === undefined) return;
 
     // The deck_id is taken from a subquery constrained by user_id, so a deck
     // belonging to someone else simply matches nothing — the authorisation is
@@ -41,8 +42,9 @@ export function registerCardRoutes(app: FastifyInstance, pool: Pool): void {
   });
 
   app.get<{ Params: { id: string } }>("/decks/:id/cards/due", async (request, reply) => {
-    const userId = await requireSession(pool, request, reply);
-    if (userId === undefined) return;
+    const userId = currentUser(request);
+
+    if ((await requireOwnedDeck(pool, request.params.id, userId, reply)) === undefined) return;
 
     const { rows } = await pool.query<CardRow>(
       `select c.id, c.front, c.back, c.repetitions, c.interval_days as "intervalDays",
@@ -56,8 +58,7 @@ export function registerCardRoutes(app: FastifyInstance, pool: Pool): void {
   });
 
   app.post<{ Params: { id: string } }>("/cards/:id/reviews", async (request, reply) => {
-    const userId = await requireSession(pool, request, reply);
-    if (userId === undefined) return;
+    const userId = currentUser(request);
     const body = parseBody(SubmitReview, request.body, reply);
     if (body === undefined) return;
 

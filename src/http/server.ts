@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import type { Pool } from "pg";
+import { registerAuthentication } from "./auth.js";
 import { registerCardRoutes } from "./routes/cards.js";
 import { registerDeckRoutes } from "./routes/decks.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
@@ -23,8 +24,31 @@ function clientErrorStatus(error: unknown): number | undefined {
  * accident. Same argument as ADR-006: injected dependencies are the difference
  * between something you can assert against and something you can only run.
  */
+export type RouteEntry = { method: string; url: string };
+
+declare module "fastify" {
+  interface FastifyInstance {
+    /**
+     * Every route this server registered. Collected so a test can enumerate the
+     * real route table instead of a hand-maintained list — a list is exactly
+     * what a new route forgets to be added to.
+     */
+    routeTable: RouteEntry[];
+  }
+}
+
 export function buildServer(pool: Pool): FastifyInstance {
   const app = Fastify({ logger: false });
+
+  const routeTable: RouteEntry[] = [];
+  app.decorate("routeTable", routeTable);
+  app.addHook("onRoute", ({ method, url }) => {
+    for (const one of Array.isArray(method) ? method : [method]) {
+      // Fastify adds a HEAD for every GET; it is the same handler and the same
+      // authorisation, so listing it twice would only duplicate every test.
+      if (one !== "HEAD") routeTable.push({ method: one, url });
+    }
+  });
 
   /**
    * Anything that reaches here is a bug, not a client mistake. The client is
@@ -43,6 +67,10 @@ export function buildServer(pool: Pool): FastifyInstance {
     request.log.error(error);
     return reply.status(500).send({ error: "Internal Server Error" });
   });
+
+  // Registered before any route: authentication is a property of the server,
+  // not something each route opts into.
+  registerAuthentication(app, pool);
 
   app.get("/health", async () => ({ ok: true }));
   registerUserRoutes(app, pool);
