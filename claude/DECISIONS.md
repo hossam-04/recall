@@ -871,3 +871,51 @@ modal must reimplement and usually gets wrong for keyboard users. This app is
 keyboard-driven, so that is not a detail. The `close` event is handled rather
 than only the buttons, so React state stays in step with Escape and backdrop
 dismissal too.
+
+---
+
+## ADR-028 — The terminal CLI is retired
+
+**Decision:** `src/cli/` and its tests are deleted, along with `decks/` and the
+`npm run review` script. `src/scheduler/sm2.ts` is untouched.
+`src/scheduler/deck.ts` is reduced to the two date helpers the API uses and
+renamed `calendar.ts`.
+
+*Alternatives:* keep it as a scheduler demo. Repoint it at the HTTP API so it
+goes through the same store.
+
+**Why, found by auditing rather than by anything failing.** The CLI still ran —
+it quizzed correctly and saved correctly. Two things were wrong underneath:
+
+1. **It recorded no review events.** `grep -c reviews src/cli/*.ts` is zero
+   across all three files. ADR-010's whole argument is that state is derivable
+   from events and events are not derivable from state, and every terminal
+   review was throwing the event away. Cards graded there are data M5 can never
+   see, and they were *silently* absent — nothing failed.
+2. **It read a different store.** `decks/starter.json` against the API's
+   Postgres. Two sources of truth that could not be reconciled, and a card
+   reviewed in one was invisible to the other.
+
+Keeping it meant fixing both, which means writing a second full client of the
+API — real work for a front end with no user, competing for the budget with M4
+and M5, which are what the project is actually judged on.
+
+**What is deliberately kept:** `sm2.ts`, which is the milestone's real artifact
+and is now imported by exactly one caller instead of two. Its 27 unit and
+property tests stay, including the sabotage-verified ease floor and cap. The
+calendar helpers stay because the API schedules due dates with them; the
+deck-model helpers (`isDue`, `dueCards`, `gradeCard`, `createCard`) went with
+the CLI, and `isDue` and `createCard` already had no caller at all.
+
+`deck.ts` became `calendar.ts` because a file named for decks that contains no
+notion of a deck is a lie the next reader has to discover.
+
+**This also closes the `loadDeck` gap** recorded since M1 — `JSON.parse` cast to
+`Deck` with no validation, which M2 was supposed to fix with Zod and did not.
+Resolved by deletion rather than by a fix, which is worth stating plainly: the
+right validation for a file nobody reads is no file.
+
+**Cost, stated honestly:** the project loses its only interface that works
+without a browser, and M1's demo — "answer five cards in the terminal and watch
+the intervals grow" — is no longer reproducible from this repo. It is in the
+git history and in ADR-004 through ADR-009.

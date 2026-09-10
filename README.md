@@ -8,7 +8,7 @@ the bank without being approved first.
 
 **Status: M3 done.** A React UI over an HTTP API with session auth and CSRF,
 on Postgres with hand-written SQL. Reviews are keyboard-driven: space reveals,
-1-4 grade. `npm run verify` runs four layers — typecheck, 100 unit and
+1-4 grade. `npm run verify` runs four layers — typecheck, 81 unit and
 integration tests, a curl smoke test against a real socket, and Playwright
 against real Chromium.
 
@@ -16,9 +16,11 @@ against real Chromium.
 npm run dev     # api on :3000, ui on :5173
 ```
 
-```bash
-npm run review -- decks/starter.json
-```
+The terminal review CLI from M1 has been retired — it kept its own JSON decks
+and recorded no review events, so it and the app disagreed about both the data
+and the design. The scheduler it was built to exercise
+([`src/scheduler/sm2.ts`](src/scheduler/sm2.ts)) is unchanged and is what the
+API grades with. See ADR-028.
 
 ## Why this exists
 
@@ -49,13 +51,15 @@ cp .env.example .env
 
 | Command | What it does |
 |---|---|
-| `npm run verify` | The done condition. Typecheck + tests. Exits 0 or it isn't done. |
+| `npm run verify` | The done condition. All four layers. Exits 0 or it isn't done. |
+| `npm run dev` | API on :3000, UI on :5173 |
 | `npm test` | Unit and integration tests |
-| `npm run typecheck` | `tsc --noEmit`, strict |
-| `npm run review -- <deck.json>` | Review the cards due today |
+| `npm run e2e` | Playwright against real Chromium |
+| `npm run smoke` | Drives a real server over a real socket with curl |
+| `npm run migrate` | Apply pending migrations |
+| `npm run typecheck` | `tsc --noEmit`, strict, both tsconfigs |
 
-More arrive as the milestones that introduce them land: `npm run dev`,
-`npx playwright test`, and `npm run eval`.
+`npm run eval` arrives with M5.
 
 > `npm run eval` will call the real Claude API and cost real money. It never runs
 > in CI and never runs as part of `verify`.

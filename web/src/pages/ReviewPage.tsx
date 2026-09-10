@@ -4,9 +4,9 @@ import { api, type Card, type Grade, type GradeResult } from "../api.js";
 import { messageOf } from "../App.js";
 
 /**
- * The same mapping as the terminal CLI in src/cli/session.ts. Deliberately
- * identical: two front ends that disagree about what "3" means would be worse
- * than either one being wrong on its own.
+ * 1-4, matching the four grades in src/scheduler/sm2.ts. This was shared with
+ * the terminal CLI until that was retired (ADR-028); it is now the only place
+ * a key maps to a grade, which is the simpler situation.
  */
 const KEYS: Record<string, Grade> = { "1": "again", "2": "hard", "3": "good", "4": "easy" };
 const LABELS: Record<Grade, string> = {

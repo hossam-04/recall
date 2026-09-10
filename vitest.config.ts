@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { defineConfig } from "vitest/config";
 
-// `npm run review` and `npm run migrate` get DATABASE_URL from tsx's
+// `npm run migrate` gets DATABASE_URL from tsx's
 // --env-file-if-exists, but vitest is launched directly, so nothing has read
 // .env by the time a test runs. `process.loadEnvFile` is standard library as of
 // Node 21 — the alternative was adding `dotenv`, which is a dependency to do

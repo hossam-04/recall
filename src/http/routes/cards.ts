@@ -5,7 +5,7 @@ import { currentUser } from "../auth.js";
 import { parseBody } from "../server.js";
 import { requireOwnedDeck } from "./decks.js";
 import { review } from "../../scheduler/sm2.js";
-import { toDateString, addDays } from "../../scheduler/deck.js";
+import { toDateString, addDays } from "../../scheduler/calendar.js";
 
 const CreateCard = z.object({
   front: z.string().trim().min(1).max(1000),

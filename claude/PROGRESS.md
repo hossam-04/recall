@@ -1,238 +1,169 @@
 # Progress Log
 
-Read this first at the start of every session — it restores context that the
-code alone does not carry.
+Read this first at the start of every session — it restores context the code
+alone does not carry.
 
 ---
 
 ## Current state
 
-**Session 1 — M1 done. M2 started: migrations run, users and sessions exist.**
+**M0–M3 done. M4 is next and has not started.**
 
 ```
 $ npm run verify
-tsc --noEmit   → clean
-vitest run     → 5 files, 41 tests passed
+tsc --noEmit (both tsconfigs)  → clean
+vitest run                     → 13 files, 81 tests
+./scripts/api-smoke.sh         → 26 assertions, all good
+playwright test                → 4 specs, real Chromium
 $ echo $?
-0
-$ npm run migrate
-No pending migrations.
+0                                          (~22 seconds)
 ```
 
-SM-2 with a fourth grade scale, an ease factor kept separate from the streak,
-and a 60-day cap (ADR-004). `npm run review -- decks/starter.json` quizzes the
-cards that are due, saves after every answer, and survives being interrupted.
-
-Three things were verified by breaking them rather than by assertion:
-
-- **The property tests bite.** Removing the ease floor, removing the cap, and
-  swapping `hard` with `easy` in the quality table were each caught — the last
-  one changes no structure, only two numbers.
-- **The timezone test did not bite** at first. It checked 23:00, which is the
-  wrong end of the day at UTC+3; `toISOString` passed it by luck. It now checks
-  both ends and fails correctly when swapped to UTC.
-- **The CLI hung** on non-TTY stdin, because `rl.question()` never resolves if
-  the stream closes first. A prompt that cannot be answered is a hang, not an
-  error, and nothing reports it.
-
-### M1 was read back line by line, and that found four defects
-
-Requested explicitly ("I want to understand the M1 code fully") and worth the
-time — **none of these would have been found by running the app.**
-
-| Found by reading | Status |
-|---|---|
-| `createCard` aliased the module-level `newCard`, so every card shared one state object | fixed — copy per card |
-| `again` scheduled for tomorrow and never re-showed in the session | fixed — re-queue, ADR-009 |
-| `summarise` returned a sentence that `review.ts` string-matched for control flow | fixed |
-| `main()` had no rejection handler — stack traces instead of messages | fixed |
-
-### M2 so far
-
-`migrations/001_users_and_sessions.sql` is applied. The runner
-(`src/db/migrate.ts`) applies plain SQL in filename order, each in its own
-transaction, and refuses to run if an already-applied file's checksum changed
-(ADR-008 — verified by editing an applied file and watching it refuse).
-Sessions are database rows, not JWTs (ADR-007).
-
-**What is deliberately not done:** no server, no UI, no LLM code, and no
-`decks`/`cards`/`reviews` tables yet — that schema is blocked on the open
-question below. `verify` still runs typecheck and unit tests only; there is **no
-integration-test harness against a real database yet**, which is the first thing
-M2 needs after the schema. The readline adapter (~15 lines) has no automated
-test; see ADR-006.
-
-**Session 0** set up the toolchain, the three project logs, and a strict
-`tsconfig`. Postgres 18.6 runs as a brew service and the `recall` database
-exists, unused so far.
-
-## Pace — read this before believing any estimate
-
-Measured from the commit record, not from claims:
-
-| Repo | Commit span | Then |
-|---|---|---|
-| `redis-clone` | 2026-07-29 → 2026-07-30 | 2 days |
-| `png-from-scratch` | 2026-07-31 → 2026-08-02 | 3 days, **then 35 days idle** |
-
-**Both projects were short bursts followed by a stop.** `png-from-scratch` is at
-M1 of 4 and has not been touched since 2 Aug 2026. The "30 h/week over 20 weeks"
-in `next-project-prompt.md:25` is not supported by this record.
-
-This is the largest risk to a 16-session plan — larger than any technical
-decision in it. The scope cuts below exist because of it, and the tripwires are
-calendar dates rather than session counts, because sessions only elapse if I
-show up.
-
-**Answered 2026-09-06: 30 h/week stands — roughly 10 sessions of 2.5–3h.**
-Taken as the budget and not re-argued. It puts M0–M5 at about **two calendar
-weeks**, so the dates below are tight on purpose: at ten sessions a week, a
-quiet week is ten missed sessions, and the burst-then-stop pattern would show up
-within days rather than being invisible for a month.
-
-## Plan
+A working product: register, sign in, create decks, add cards, review them by
+keyboard in a browser. Postgres underneath with hand-written SQL, session auth
+with CSRF, and a second user gets 403.
 
 | # | Goal | Bar (the command that decides) | Done |
 |---|---|---|---|
 | 0 | Toolchain + repo scaffold | `npm run verify` exits 0 | ☑ |
-| 1 | SM-2 scheduler + terminal review CLI | `npm test` — property tests green | ☑ |
-| 2 | Postgres, migrations, Fastify API, session auth | `./scripts/api-smoke.sh` exits 0 | ☐ |
-| 3 | React review UI, keyboard-driven | `npx playwright test` green | ☐ |
+| 1 | SM-2 scheduler | `npm test` — property tests green | ☑ |
+| 2 | Postgres, migrations, Fastify API, session auth | `./scripts/api-smoke.sh` exits 0 | ☑ |
+| 3 | React review UI, keyboard-driven | `npx playwright test` green | ☑ |
 | 4 | AI generation, both modes, approval queue | `npm run verify` green against fixtures | ☐ |
 | 5 | Evals, cost tracking, degradation, the measurement | `npm run eval` prints a scored table | ☐ |
 | 6 | *Stretch:* FSRS + `ts-fsrs` differential test | 10k histories match the reference | ☐ |
 
-Estimate: **M0–M5 = 16 sessions at 2.5–3h**, widened to **14–20** because no
-comparable solo build with a stated duration was found. Weakest number in the
-plan. M6 excluded.
+## What exists
 
-## Dates
+```
+src/scheduler/sm2.ts        the algorithm — 4 grades, ease floor 1.3, 60-day cap
+src/scheduler/calendar.ts   toDateString / addDays (local calendar, not UTC)
+src/db/migrate.ts           transactional, checksummed migration runner
+src/db/pool.ts              lazy singleton pool
+src/http/server.ts          buildServer(pool), error handler, parseBody, routeTable
+src/http/auth.ts            default-deny authentication + CSRF, PUBLIC_ROUTES
+src/http/cookies.ts         hand-rolled HttpOnly / SameSite / Secure
+src/http/routes/            users, sessions, decks, cards — all under /api
+src/users, src/sessions     argon2 hashing, CSPRNG session + CSRF tokens
+web/src/                    React 19 + react-router, Vite proxies /api
+migrations/001–004          users, sessions, decks, cards, reviews, csrf_token
+scripts/api-smoke.sh        the M2 bar, real socket, real curl
+e2e/review.spec.ts          the M3 bar, real Chromium
+```
 
-Derived from 10 sessions/week, starting 2026-09-06.
+**Four migrations, six tables.** Verified this session against a fresh empty
+database: all four apply and produce `cards, decks, reviews, schema_migrations,
+sessions, users`.
 
-- **Tripwire — 2026-09-09.** M1 is 2 sessions. If it is not done in three days,
-  the budget is not real and every date below is fiction.
-- **Kill check — 2026-09-13.** M2 is cumulative session 7. If auth and Postgres
-  are not working end to end, cut to SQLite with plain cookie sessions and no
-  CSRF, and record why.
-- **Pattern check — any 7 consecutive days with no commit.** At this budget that
-  is ten missed sessions, and it is the `png-from-scratch` signature. Stop and
-  decide deliberately whether to park this or resume it; do not let it drift
-  into a third open repo.
+## Decisions that shape everything after them
+
+28 ADRs in `claude/DECISIONS.md`. The load-bearing ones:
+
+- **ADR-005** due dates are stored, not recomputed — changing a constant must
+  not retroactively move cards already scheduled
+- **ADR-010** both state *and* events are stored; state is a derivable, checkable
+  cache of the events. M5 cannot measure anything without the events
+- **ADR-011** `reviews` references `cards` `on delete restrict` — deleting bad
+  generated cards would erase what M5 measures. Account deletion is currently
+  impossible as a result, decided at M3 (still open)
+- **ADR-017** authorisation predicates live inside the SQL
+- **ADR-020** authentication is default-deny; tests enumerate the real route table
+- **ADR-021** CSRF is a synchronizer token on the session row, not double-submit
+- **ADR-028** the terminal CLI is retired
+
+## What breaking things has taught us
+
+Sabotage — deliberately breaking code to see whether a test notices — has found
+**four tests that passed while measuring something other than their name.**
+
+| Test | Passed even when… |
+|---|---|
+| M1 timezone | `toISOString` was swapped in (23:00 at UTC+3 is the same date) |
+| migration transaction | `begin`/`commit` were deleted (Postgres wraps multi-statement queries itself) |
+| session id "unguessable" | `randomBytes` became `Math.random` (uniqueness is not entropy) |
+| CSRF | double-submit replaced the synchronizer token |
+
+Each was rewritten and re-verified against the same sabotage. **A passing test
+is evidence only after you have watched it fail.**
+
+Also: the suite was silently flaky for a whole milestone. Vitest runs test
+*files* in parallel and four of them shared one database, truncating each
+other mid-test — 5–7 failures per run, drifting. Green runs before that were
+luck. `fileParallelism: false`, ADR-012.
+
+## Pace
+
+| Date | Commits | What landed |
+|---|---|---|
+| 2026-09-06 | 1 | M0 scaffold |
+| 2026-09-07 | 10 | M1, migrations, test harness |
+| 2026-09-08 | 5 | M2 — API, auth, the smoke test |
+| 2026-09-10 | 7+ | CSRF, M3 UI, Playwright, UI rework |
+
+**M0–M3 in four calendar days**, against a plan that budgeted 11 sessions for
+them and a 2026-09-20 target for M0–M5. Ahead, and the tripwires below have all
+passed:
+
+- ~~Tripwire 2026-09-09 — M1 done in three days~~ done 09-07
+- ~~Kill check 2026-09-13 — auth and Postgres end to end~~ done 09-08
 - **Ship-without-AI check — 2026-09-20.** If M4 has not started, ship the SRS
   without generation and say so in the README.
-- **Target for M0–M5 — 2026-09-20.**
+- **Pattern check — any 7 consecutive days with no commit.** This is the
+  `png-from-scratch` signature (3 days of work, then 35 idle). Still the largest
+  risk to the plan; nothing about being ahead of schedule changes it.
 
-## Re-derivation schedule
+## Known gaps, recorded not fixed
 
-No code is copied from `redis-clone` or `png-from-scratch`. Where concepts
-overlap they are re-derived in TypeScript, spread across milestones rather than
-front-loaded:
+- **Account deletion is impossible.** ADR-011's restrict propagates up every
+  cascade path. Decided at M3; still open.
+- **`saveDeck`'s successor doesn't exist** — there is no file persistence at all
+  now, which is fine, but note nothing `fsync`s anything; durability is
+  Postgres's problem and Postgres does it.
+- **The readline adapter is gone with the CLI**, so ADR-006's untested ~15 lines
+  are no longer a gap.
+- **`ease` is unbounded above.** A card answered `easy` forever drifts up with
+  no ceiling. Harmless today; would matter if intervals were not capped.
+- **Test style is split** — M1's 27 remaining tests use `it(`, the rest use
+  `test(`. Cosmetic; it made an audit miscount once.
 
-| Concept | First seen in | Re-derived at |
-|---|---|---|
-| Validating untrusted input at a boundary | `png-from-scratch` (chunk parsing) | M2 — request body validation |
-| Length/format framing of a wire protocol | `redis-clone` (RESP) | M2 — HTTP semantics and content types |
-| Buffering and flush policy | `redis-clone` (AOF writer) | M4 — streaming and prompt caching |
-| Absolute vs relative deadlines | `redis-clone` (TTLs in the AOF) | **M1 — done, ADR-005** |
-| Atomic write via temp + rename | `redis-clone` (AOF durability) | **M1 — done, `deck-file.ts`** |
-| Truncated vs corrupt input | both | M4 — `parsed_output === null` handling |
+## Next up: M4 — AI generation
 
-All four are **unverified**: the cold-recall probes were declined when
-`png-from-scratch` was chosen, so none of them is on the skip list.
+Nothing is written yet. From the plan:
 
-## Pre-committed scope cuts, in order
+- Both modes behind one `POST /api/generations` — a subject, or pasted source
+- `client.messages.parse()` with `zodOutputFormat`, model `claude-opus-5`;
+  `parsed_output` is `null` on a parse failure and must be guarded, never `!`
+- Candidates land in a `generation_candidates` table behind an approval gate —
+  **nothing enters the bank without being approved**, which is also the real
+  mitigation for prompt injection in the paste-source mode
+- Persist `input_tokens`, `output_tokens`, `cache_read_input_tokens`,
+  `cache_creation_input_tokens` per generation; compute dollars from those
+- Recorded fixtures so `verify` and CI never touch the live API
 
-1. M6 / FSRS — **already cut** to stretch
-2. Deck sharing between users
-3. Rich card content — plain text and markdown only
-4. Mode B file upload — paste-only, no PDF or file parsing
-5. Postgres → SQLite, if M2 setup runs past one session
-6. Mobile-responsive layout
+**Two things to settle before starting:** the budget is real money (~$20–40
+across the project, ~$0.05 per generation of 10 cards), and the key goes in a
+gitignored `.env` or comes from `ant auth login`.
 
-## Environment — verified this session
+**Two things that fail silently and must be checked deliberately:** prompt
+caching (confirm `cache_read_input_tokens > 0` on a repeat generation) and the
+eval itself (weaken the prompt on purpose and confirm the score drops — an eval
+that never goes down is measuring nothing).
+
+## Environment
 
 ```
-arm64 · 16 GB · 8 cores · 364 GB free · darwin 25.6.0
-node        v26.8.1
-npm         11.19.0            (12.0.2 available; not upgraded, no reason to)
-postgres    18.6 (Homebrew), running as a brew service, database `recall` created
-typescript  ^5    tsx    vitest 5.0.0
+arm64 · 16 GB · 8 cores · darwin 25.6.0 · Africa/Cairo (UTC+3)
+node v26.8.1 · npm 11.19.0 · postgres 18.6 (brew service, database `recall`)
+runtime deps: argon2, fastify, pg, react, react-dom, react-router, zod
+dev deps: @playwright/test, tsx, typescript, vite, vitest, @vitejs/plugin-react, types
+banned per ADR-001 and absent: next, prisma, drizzle, any auth library
 ```
 
-**Postgres is keg-only.** `psql` is not on the default PATH. Either use the full
-path or export it:
+**Postgres is keg-only** — `psql` is not on the default PATH:
 
 ```bash
 export PATH="/opt/homebrew/opt/postgresql@18/bin:$PATH"
 ```
 
-Not yet installed, and deliberately so — each needs a justification and approval
-when its milestone arrives: `fastify`, `pg`, `zod`, `argon2`, `react`, `vite`,
-`@playwright/test`, `@anthropic-ai/sdk`.
-
-## Next up
-
-**Blocked on one unanswered question** — the `decks`/`cards`/`reviews` schema
-cannot be written until it is settled:
-
-> A *review* is an event: "card 17, graded `good`, 2026-09-07". A card's *state*
-> — repetitions, ease, intervalDays, dueAt — is what those events add up to.
->
-> - **(a) State only.** `cards` holds the four fields; grading is an `UPDATE`.
->   Nothing records that the review happened.
-> - **(b) Events only.** One row per answer in `reviews`; state is not stored,
->   it is replayed through SM-2 on demand.
-> - **(c) Both**, written in one transaction.
->
-> Which, and what breaks in the other two? Prompts: (1) M5 measures whether
-> AI-generated cards are worse than hand-written ones — what data does that
-> need, and does (a) have it? (2) (b) recomputes state from history, which is
-> the thing ADR-005 rejected — why? (3) (c) stores the same fact twice; what is
-> the failure mode and what prevents it?
-
-Then, in order: the integration-test harness against a real database, Fastify,
-and session auth. The M2 bar is `./scripts/api-smoke.sh` exiting 0 — sign up,
-log in, create a deck, submit reviews, and a second user getting 403 on the
-first user's deck.
-
-Answered in session 1, for the record: *should a card on its 4th correct review
-get the same interval as one on its 1st?* — "no, the 4th should take a longer
-interval", then "b should be shorter, maybe number of fails" for the follow-up.
-Both correct in direction; SM-2 uses a recovering multiplier rather than a
-counter, for the reasons in ADR-004's neighbours. The absolute-vs-relative
-due-date question was answered "(a)", correctly — see ADR-005.
-
-Answered in session 1, for the record: *should a card on its 4th correct review
-get the same interval as one on its 1st?* — "no, the 4th should take a longer
-interval", then "b should be shorter, maybe number of fails" for the follow-up.
-Both correct in direction; SM-2 uses a recovering multiplier rather than a
-counter, for the reasons in ADR-004's neighbours.
-
-## Open questions
-
-- ~~The weekly budget.~~ Answered 2026-09-06: 30 h/week, ~10 sessions.
-  The commit record does not yet support it; the 2026-09-09 tripwire is what
-  tests it cheaply.
-- ~~`png-from-scratch` should be marked parked.~~ Done 2026-09-06 — it is now
-  row 1b in `PROJECTS.md`, parked with the resume path recorded (M2 is real
-  `inflate`; the oracle and corpus are already wired and passing).
-- ~~`redis-clone` still shows 🔨 in `PROJECTS.md`.~~ Resolved 2026-09-07 —
-  marked ✅ shipped. Everything in its stated scope is built and measured; the
-  `everysec` finding in ADR-013 is a documented limitation, not unfinished
-  scope, and `PROJECTS.md` now states it in the open (4.8× Redis p99 at 50
-  clients, contention on the write side) rather than leaving the row ambiguous.
-  Resume bullet filled with the measured numbers, per the rule in that file that
-  a bullet never ships without one.
-- **`loadDeck` casts `JSON.parse` output to `Deck` without checking it.** A
-  malformed file produces a `Deck`-typed object that is not one, and the failure
-  surfaces far away. M2 fixes this with Zod — it is the "validate untrusted
-  input at a boundary" row of the re-derivation schedule.
-- **`saveDeck` is atomic but not durable.** `rename` cannot leave a corrupt
-  file, but `writeFile` does not `fsync`, so an unflushed write can be lost
-  entirely on power loss. Atomicity and durability are different guarantees;
-  `redis-clone` had to make the same distinction with `appendfsync`.
-- **`ease` is unbounded above.** Harmless today because ADR-004's 60-day cap
-  swallows it, but if the cap ever becomes per-deck and large, this comes back.
-- **The oracle is weaker here than in either previous project.** ADR-002 records
-  the argument that this makes the repo undifferentiated. It gets judged at M5.
+Ports: API 3000, Vite 5173, smoke test 3999, Playwright 3001/5174 — deliberately
+distinct so a test can never talk to a dev server someone left running.
