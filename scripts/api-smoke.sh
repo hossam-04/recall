@@ -53,6 +53,11 @@ curl -sf "$BASE/health" >/dev/null || { cat /tmp/smoke-server.log; fail "server 
 pass "server listening on $PORT, migrations applied on boot"
 
 json=(-H 'content-type: application/json')
+
+# Pulls the CSRF token out of a cookie jar. Every state-changing request needs
+# it in a header — a browser attaches cookies by itself but will not set this,
+# which is exactly why it works as a CSRF defence (ADR-021).
+csrf() { awk '/recall_csrf/ { print $7 }' "$1"; }
 A='{"email":"alice@example.com","password":"a-good-password"}'
 B='{"email":"bob@example.com","password":"a-good-password"}'
 
@@ -61,22 +66,30 @@ expect 409 "duplicate is refused" -X POST "${json[@]}" -d "$A" "$BASE/users"
 expect 401 "wrong password"       -X POST "${json[@]}" -d '{"email":"alice@example.com","password":"nope-nope"}' "$BASE/sessions"
 expect 201 "alice logs in"        -X POST "${json[@]}" -d "$A" -c "$JAR_A" "$BASE/sessions"
 grep -q recall_session "$JAR_A" && pass "session cookie was set" || fail "no session cookie"
-grep -qi httponly    "$JAR_A" && pass "cookie is HttpOnly"      || fail "cookie is not HttpOnly"
+grep -qi httponly    "$JAR_A" && pass "session cookie is HttpOnly" || fail "session cookie is not HttpOnly"
+[ -n "$(csrf "$JAR_A")" ] && pass "CSRF token cookie is readable" || fail "no readable CSRF cookie"
 
 expect 401 "no cookie is refused" "$BASE/decks"
-expect 201 "alice creates a deck" -X POST "${json[@]}" -d '{"name":"Algorithms"}' -b "$JAR_A" "$BASE/decks"
+expect 403 "a write with the cookie but no CSRF token" -X POST "${json[@]}" \
+  -d '{"name":"Algorithms"}' -b "$JAR_A" "$BASE/decks"
+CSRF_A="-H x-csrf-token:$(csrf "$JAR_A")"
+# shellcheck disable=SC2086
+expect 201 "alice creates a deck" -X POST "${json[@]}" $CSRF_A -d '{"name":"Algorithms"}' -b "$JAR_A" "$BASE/decks"
 DECK=$(sed -n 's/.*"id":"\([0-9]*\)".*/\1/p' /tmp/smoke-body)
 
-expect 201 "alice adds a card" -X POST "${json[@]}" \
+# shellcheck disable=SC2086
+expect 201 "alice adds a card" -X POST "${json[@]}" $CSRF_A \
   -d '{"front":"What is a heap?","back":"A tree with the heap property"}' -b "$JAR_A" "$BASE/decks/$DECK/cards"
 CARD=$(sed -n 's/.*"id":"\([0-9]*\)".*/\1/p' /tmp/smoke-body)
 
 expect 200 "the card is due today" -b "$JAR_A" "$BASE/decks/$DECK/cards/due"
 grep -q 'What is a heap' /tmp/smoke-body && pass "due list contains it" || fail "due list is empty"
 
-expect 201 "grade: good"  -X POST "${json[@]}" -d '{"grade":"good"}'  -b "$JAR_A" "$BASE/cards/$CARD/reviews"
+# shellcheck disable=SC2086
+expect 201 "grade: good"  -X POST "${json[@]}" $CSRF_A -d '{"grade":"good"}'  -b "$JAR_A" "$BASE/cards/$CARD/reviews"
 grep -q '"intervalDays":1' /tmp/smoke-body && pass "first good -> 1 day" || fail "wrong interval: $(cat /tmp/smoke-body)"
-expect 201 "grade: good again" -X POST "${json[@]}" -d '{"grade":"good"}' -b "$JAR_A" "$BASE/cards/$CARD/reviews"
+# shellcheck disable=SC2086
+expect 201 "grade: good again" -X POST "${json[@]}" $CSRF_A -d '{"grade":"good"}' -b "$JAR_A" "$BASE/cards/$CARD/reviews"
 grep -q '"intervalDays":6' /tmp/smoke-body && pass "second good -> 6 days" || fail "wrong interval: $(cat /tmp/smoke-body)"
 
 REVIEWS=$(psql "$DB" -tAc "select count(*) from reviews")

@@ -7,6 +7,7 @@ import { findByEmail, hashPassword, verifyPassword } from "../../users/users.js"
 import { parseBody } from "../server.js";
 
 export const SESSION_COOKIE = "recall_session";
+export const CSRF_COOKIE = "recall_csrf";
 const LIFETIME_SECONDS = 30 * 24 * 60 * 60;
 
 const Login = z.object({ email: z.email().toLowerCase(), password: z.string().min(1) });
@@ -38,9 +39,15 @@ export function registerSessionRoutes(app: FastifyInstance, pool: Pool): void {
 
     const session = await createSession(pool, user.id);
     return await reply
-      .header("set-cookie", serializeCookie(SESSION_COOKIE, session.id, {
-        maxAgeSeconds: LIFETIME_SECONDS,
-      }))
+      .header("set-cookie", [
+        serializeCookie(SESSION_COOKIE, session.id, { maxAgeSeconds: LIFETIME_SECONDS }),
+        // Readable by our own JavaScript on purpose — it has to be echoed in a
+        // header, and the browser will not do that by itself. ADR-021.
+        serializeCookie(CSRF_COOKIE, session.csrfToken, {
+          maxAgeSeconds: LIFETIME_SECONDS,
+          httpOnly: false,
+        }),
+      ])
       .status(201)
       .send({ id: user.id, email: user.email });
   });
@@ -51,6 +58,9 @@ export function registerSessionRoutes(app: FastifyInstance, pool: Pool): void {
     // working. 204 either way — whether that session existed is not the
     // caller's business.
     if (id !== undefined) await deleteSession(pool, id);
-    return await reply.header("set-cookie", expiredCookie(SESSION_COOKIE)).status(204).send();
+    return await reply
+      .header("set-cookie", [expiredCookie(SESSION_COOKIE), expiredCookie(CSRF_COOKIE)])
+      .status(204)
+      .send();
   });
 }

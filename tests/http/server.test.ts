@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { buildServer, parseBody } from "../../src/http/server.js";
 import { testPool, useCleanDatabase } from "../support/db.js";
-import { signIn } from "../support/auth.js";
+import { type SignedIn, signIn } from "../support/auth.js";
 
 useCleanDatabase();
 
@@ -17,7 +17,7 @@ useCleanDatabase();
  * opts into, so a probe route added here is protected like any other.
  */
 let app: FastifyInstance;
-let cookie: string;
+let user: SignedIn;
 
 const CreateDeck = z.object({ name: z.string().min(1) });
 
@@ -41,10 +41,10 @@ beforeEach(async () => {
     return reply.status(201).send({ received: body });
   });
 
-  cookie = await signIn(app);
+  user = await signIn(app);
 });
 
-const as = () => ({ headers: { cookie } });
+const as = () => ({ headers: user.headers });
 
 describe("the HTTP boundary", () => {
   test("serves health and 404s an unknown route", async () => {
@@ -63,7 +63,7 @@ describe("the HTTP boundary", () => {
     const response = await app.inject({
       method: "POST",
       url: "/echo",
-      headers: { "content-type": "application/json", cookie },
+      headers: { "content-type": "application/json", ...user.headers },
       payload: "{ not json",
     });
     expect(response.statusCode).toBe(400);

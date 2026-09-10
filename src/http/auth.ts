@@ -31,6 +31,16 @@ export function isPublic(method: string, url: string): boolean {
 }
 
 /**
+ * Methods that change state. GET and HEAD are exempt from the CSRF check
+ * because a GET is not supposed to change anything — which is a promise our own
+ * routes have to keep. A GET that deletes something is a CSRF hole no token
+ * will close, because the browser will follow an <img src> to it.
+ */
+const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+export const CSRF_HEADER = "x-csrf-token";
+
+/**
  * Global `preHandler`: authenticates every request that is not explicitly
  * public, and hangs the user id on the request.
  *
@@ -51,6 +61,24 @@ export function registerAuthentication(app: FastifyInstance, pool: Pool): void {
       return await reply.status(401).send({ error: "Not signed in" });
     }
     request.userId = session.userId;
+
+    if (!UNSAFE_METHODS.has(request.method)) return;
+
+    /**
+     * The token arrives in a header the page sets explicitly. That is the whole
+     * mechanism: an attacker's page can make the browser *send* a request with
+     * our cookies attached, but it cannot read our cookie or our response to
+     * discover the value to put here — the same-origin policy stops it. Forms
+     * and <img> tags cannot set custom headers at all.
+     *
+     * Compared against the token stored on the session row, not against the
+     * cookie. Double-submit would compare cookie to header, which a same-site
+     * attacker who can write cookies for our domain could satisfy on both sides.
+     */
+    const supplied = request.headers[CSRF_HEADER];
+    if (typeof supplied !== "string" || supplied !== session.csrfToken) {
+      return await reply.status(403).send({ error: "Missing or invalid CSRF token" });
+    }
   });
 }
 

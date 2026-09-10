@@ -659,3 +659,91 @@ it does not exist, 403 if it is not yours.
 authentication. Whether this user may touch that row is per-route data logic.
 The cross-user test is the safety net there, and it is a net rather than a
 guarantee — it can only substitute ids into routes it recognises.
+
+---
+
+## ADR-021 — CSRF: a synchronizer token on the session row, in a readable cookie
+
+**Decision:** `createSession` issues a second CSPRNG value stored on the session
+row. Login sets it in a cookie that is deliberately **not** `HttpOnly`. The
+global `preHandler` requires an `x-csrf-token` header matching **the session
+row's** token on every `POST`/`PUT`/`PATCH`/`DELETE`. Safe methods are exempt,
+and so are the routes that have no session to protect yet.
+
+*Alternatives:* double-submit — compare the header to the cookie, storing
+nothing. Relying on `SameSite=Lax` alone, which is what M2 shipped.
+
+**Why not `SameSite=Lax` alone.** It closes the common shape and it is genuinely
+useful, but it is a browser *behaviour* rather than something we enforce, it does
+nothing against a same-site attacker (any subdomain, or attacker-controlled
+content served from our own origin), and it silently stops applying if the API
+is ever called cross-origin.
+
+**Why not `HttpOnly` on the token cookie — the part that looks wrong.** ADR-015
+argued `HttpOnly` is the entire value of the session cookie, and this cookie
+does not have it. The asymmetry is the mechanism, not a compromise:
+
+- The **session cookie** is a credential. The browser attaches it
+  automatically, so the page never needs to read it, so it should not be able
+  to. `HttpOnly` means an XSS bug cannot exfiltrate it.
+- The **CSRF token** is not a credential — on its own it authenticates nothing.
+  It is a value that must be *echoed in a header*, and the browser will not do
+  that by itself. A value JavaScript cannot read is a value JavaScript cannot
+  send.
+
+What stops an attacker obtaining it is the same-origin policy: their page can
+make the browser *send* a request carrying our cookies, but cannot read our
+cookies or our responses. And a `<form>` or `<img src>` cannot set a custom
+header at all — which is why the header, not the body, is where the token goes.
+
+The honest limit: **under XSS both designs lose.** A script running on our
+origin reads the token cookie and sends the header. CSRF protection assumes the
+attacker is off-origin; `HttpOnly` on the session cookie is what limits the
+damage when that assumption fails, and it is untouched here.
+
+**Why the session row rather than double-submit — and how nearly it went
+unverified.** Sabotage swapped the check to compare header against cookie, and
+**all eight tests still passed.** The suite could not tell the two designs apart,
+so the ADR would have claimed a benefit nothing checked.
+
+The case that separates them: an attacker who can set a cookie on our domain — a
+sibling subdomain, or any `Set-Cookie` injection — writes `recall_csrf=chosen`
+and sends `x-csrf-token: chosen`. Double-submit compares the two, finds them
+equal, and accepts the forged write riding the victim's real session. Comparing
+against the value stored on the session row makes the cookie irrelevant. There
+is now a test for exactly that, verified to fail under double-submit.
+
+**GET is exempt, which is a promise our routes must keep.** A `GET` that changes
+state is a hole no token closes, because a browser will follow an `<img src>`
+straight to it.
+
+*Would revisit if:* the API is ever called cross-origin, where `SameSite=None`
+makes this the only line of defence rather than the second.
+
+---
+
+## ADR-022 — Migration 004 corrects 003, because 003 had already run
+
+**Decision:** `003_session_csrf_tokens.sql` constrained the token to
+`length(...) = 43`. That is 32 bytes in base64url — the value `ID_BYTES` holds
+today, not a property that is true under any configuration. Migration 002
+established the line: **constraints encode invariants, not current tuning.**
+Migration 004 replaces it with `length(...) >= 32`.
+
+**Why a new file.** Editing 003 was tried first, deliberately. The runner
+refused:
+
+```
+Migration 003_session_csrf_tokens.sql was edited after it ran.
+  on disk: 80cb4a887259
+Write a new migration instead; this database and a fresh one no longer agree.
+```
+
+ADR-008 was written on the argument that this would happen eventually. It did,
+within one milestone, to the person who wrote the guard.
+
+**Existing sessions were deleted, not backfilled.** A token invented on their
+behalf is one no browser is holding, so those sessions would fail every write
+anyway — and issuing a *real* token to a session created before the protection
+existed is precisely the silent retrofit that should not happen. Everyone signs
+in again.

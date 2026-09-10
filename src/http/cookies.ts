@@ -3,7 +3,16 @@
  * the hand-rolled list in CLAUDE.md, and the flags below are the entire
  * security value of a session cookie.
  */
-export type CookieOptions = { maxAgeSeconds: number };
+export type CookieOptions = {
+  maxAgeSeconds: number;
+  /**
+   * Defaults to true. The CSRF token cookie is the one exception: the client
+   * has to read it to echo it back in a header, and a value JavaScript cannot
+   * read is a value JavaScript cannot send. See ADR-021 for why that does not
+   * undo the session cookie's HttpOnly.
+   */
+  httpOnly?: boolean;
+};
 
 export function serializeCookie(name: string, value: string, options: CookieOptions): string {
   return [
@@ -11,7 +20,7 @@ export function serializeCookie(name: string, value: string, options: CookieOpti
     "Path=/",
     // Unreadable from document.cookie, so an XSS bug cannot exfiltrate the
     // session. This is the flag JWT-in-localStorage gives up (ADR-007).
-    "HttpOnly",
+    ...(options.httpOnly === false ? [] : ["HttpOnly"]),
     // Not sent on cross-site POSTs, which is the CSRF class this closes for
     // free. Lax rather than Strict so following a link into the app still
     // arrives logged in.

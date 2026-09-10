@@ -2,9 +2,8 @@ import { beforeEach, describe, expect, test } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildServer } from "../../src/http/server.js";
 import { isPublic } from "../../src/http/auth.js";
-import { SESSION_COOKIE } from "../../src/http/routes/sessions.js";
-import { parseCookies } from "../../src/http/cookies.js";
 import { testPool, useCleanDatabase } from "../support/db.js";
+import { type SignedIn, signIn } from "../support/auth.js";
 
 useCleanDatabase();
 
@@ -13,14 +12,6 @@ beforeEach(async () => {
   app = buildServer(testPool());
   await app.ready(); // routes register on ready; routeTable is empty before it
 });
-
-async function signIn(email: string): Promise<string> {
-  const credentials = { email, password: "a-good-password" };
-  await app.inject({ method: "POST", url: "/users", payload: credentials });
-  const login = await app.inject({ method: "POST", url: "/sessions", payload: credentials });
-  const raw = login.headers["set-cookie"];
-  return `${SESSION_COOKIE}=${parseCookies(Array.isArray(raw) ? raw[0] : raw)[SESSION_COOKIE]}`;
-}
 
 /**
  * These tests read the server's real route table rather than a list written by
@@ -54,9 +45,9 @@ describe("every route, enumerated", () => {
   });
 
   test("no route lets one user reach another user's data", async () => {
-    const alice = await signIn("alice@x.com");
-    const bob = await signIn("bob@x.com");
-    const as = (cookie: string) => ({ headers: { cookie } });
+    const alice = await signIn(app, "alice@x.com");
+    const bob = await signIn(app, "bob@x.com");
+    const as = (who: SignedIn) => ({ headers: who.headers });
 
     const deck = await app.inject({
       method: "POST", url: "/decks", payload: { name: "Algorithms" }, ...as(alice),
