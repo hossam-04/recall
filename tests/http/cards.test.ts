@@ -29,6 +29,37 @@ async function deckWithCards(...fronts: string[]): Promise<string> {
   return id;
 }
 
+describe("deck counts", () => {
+  test("come from SQL and are the same shape on create, list and fetch", async () => {
+    const created = (await app.inject({
+      method: "POST", url: "/api/decks", payload: { name: "Empty" }, ...as(),
+    })).json();
+    // A deck with no cards must still appear — left join, not inner. An empty
+    // deck is exactly what a new user has.
+    expect(created).toMatchObject({ cardCount: 0, dueCount: 0 });
+
+    const deckId = await deckWithCards("first", "second");
+    // By name, not by index: the list is ordered by name, so "Algorithms"
+    // sorts ahead of the "Empty" deck created first.
+    const byName = (rows: { name: string }[], name: string) =>
+      rows.find((deck) => deck.name === name);
+
+    const listed = (await app.inject({ method: "GET", url: "/api/decks", ...as() })).json();
+    expect(byName(listed, "Algorithms")).toMatchObject({ cardCount: 2, dueCount: 2 });
+
+    const [card] = (await app.inject({ method: "GET", url: `/api/decks/${deckId}/cards`, ...as() })).json();
+    await app.inject({
+      method: "POST", url: `/api/cards/${card.id}/reviews`, payload: { grade: "good" }, ...as(),
+    });
+
+    const single = (await app.inject({ method: "GET", url: `/api/decks/${deckId}`, ...as() })).json();
+    expect(single).toMatchObject({ cardCount: 2, dueCount: 1 });
+
+    const relisted = (await app.inject({ method: "GET", url: "/api/decks", ...as() })).json();
+    expect(byName(relisted, "Algorithms")).toEqual(single);
+  });
+});
+
 describe("GET /api/me", () => {
   test("answers with the signed-in user", async () => {
     const response = await app.inject({ method: "GET", url: "/api/me", ...as() });

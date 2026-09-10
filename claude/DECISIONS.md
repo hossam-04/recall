@@ -809,3 +809,65 @@ instead of re-queueing fails the ADR-009 spec.
 
 *Would revisit if:* `verify` gets slow enough to discourage running it. It is
 about 11 seconds.
+
+---
+
+## ADR-025 — Answers are hidden while browsing a deck
+
+**Decision:** the deck screen shows fronts only. Each card is a `<details>`; the
+back appears when asked for.
+
+**Why:** the first version rendered front and back together, which was rendering
+the data model instead of thinking about what the screen is for. This is a
+memory tool — reading the answer while browsing spoils the card you are about to
+be tested on, and the damage is invisible because the app still "works". Caught
+by the user, not by any test.
+
+`<details>` rather than per-card React state: it is keyboard-operable, correct
+for screen readers, and survives a re-render, with no JavaScript. The e2e suite
+now asserts the answer text is **hidden** on the deck screen, so restoring the
+old behaviour fails a test.
+
+---
+
+## ADR-026 — Deck counts are computed in SQL
+
+**Decision:** `GET /api/decks` returns `cardCount` and `dueCount` per deck, from
+a `left join` with `count(...) filter (where due_on <= current_date)`.
+
+*Alternatives:* fetch every deck's cards and count them in the browser.
+
+**Why:** counting client-side means the deck list pulls every card of every deck
+across the wire to display two numbers, and gets slower with every card added.
+The database already has the rows indexed; asking it to count is one query
+either way.
+
+`left join`, not inner — an inner join silently drops decks with no cards, which
+is exactly what a new user has. There is a test for the empty deck for that
+reason.
+
+**The same trap as ADR-024, avoided deliberately:** create, list and fetch all
+return the identical deck shape, including the counts (zero on a fresh deck).
+The `due`-field bug happened because create returned less than list did; the
+test here asserts `create`, `GET /decks` and `GET /decks/:id` agree.
+
+---
+
+## ADR-027 — Adding things happens in a native `<dialog>`
+
+**Decision:** "New deck" and "Add card" are buttons in the page header that open
+a `<dialog>` via `showModal()`.
+
+*Alternatives:* the previous layout — a form permanently at the bottom of the
+page. A hand-rolled modal div.
+
+**Why the change:** a permanent form put the least-used control in the most
+space, pushed the content that matters down the page, and gave no obvious
+primary action.
+
+**Why native `<dialog>`:** `showModal()` supplies focus trapping, Escape to
+close, `inert` background content, and `::backdrop` — all things a div-based
+modal must reimplement and usually gets wrong for keyboard users. This app is
+keyboard-driven, so that is not a detail. The `close` event is handled rather
+than only the buttons, so React state stays in step with Escape and backdrop
+dismissal too.

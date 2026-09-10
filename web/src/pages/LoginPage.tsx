@@ -31,9 +31,12 @@ export function LoginPage({ onSignedIn }: { onSignedIn: (user: User) => void }) 
   }
 
   return (
-    <>
-      <h1>{registering ? "Create an account" : "Sign in"}</h1>
-      <form onSubmit={(event) => void submit(event)}>
+    <div style={{ maxWidth: "22rem", margin: "6rem auto 0" }}>
+      <h1 style={{ marginBottom: ".25rem" }}>recall</h1>
+      <p className="subtitle" style={{ marginBottom: "2rem" }}>
+        {registering ? "Create an account to start building decks." : "Sign in to keep reviewing."}
+      </p>
+      <form onSubmit={(event) => void submit(event)} style={{ maxWidth: "none" }}>
         <label>
           <span>Email</span>
           <input
@@ -49,16 +52,16 @@ export function LoginPage({ onSignedIn }: { onSignedIn: (user: User) => void }) 
           />
         </label>
         {error !== "" && <p className="error" role="alert">{error}</p>}
-        <button type="submit" disabled={busy}>
+        <button type="submit" className="primary" disabled={busy} style={{ width: "100%" }}>
           {registering ? "Create account" : "Sign in"}
         </button>
       </form>
-      <p className="muted" style={{ marginTop: "1.5rem" }}>
+      <p className="muted" style={{ marginTop: "1.5rem", textAlign: "center" }}>
         {registering ? "Already have an account? " : "No account yet? "}
-        <button onClick={() => { setRegistering(!registering); setError(""); }}>
+        <button className="quiet" onClick={() => { setRegistering(!registering); setError(""); }}>
           {registering ? "Sign in" : "Create one"}
         </button>
       </p>
-    </>
+    </div>
   );
 }

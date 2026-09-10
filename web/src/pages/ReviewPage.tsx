@@ -77,39 +77,47 @@ export function ReviewPage() {
 
   if (card === undefined) {
     return (
-      <>
-        <h1>Done</h1>
-        <p className="muted">
+      <div className="empty" style={{ padding: "3rem 1rem" }}>
+        <h1 style={{ marginBottom: ".5rem" }}>Done</h1>
+        <p className="muted" style={{ marginBottom: "1.5rem" }}>
           {reviewed} review{reviewed === 1 ? "" : "s"} this session.
         </p>
         <Link to={`/decks/${id}`}>Back to the deck</Link>
-      </>
+      </div>
     );
   }
 
   return (
     <>
-      <p className="muted">
-        {queue.length} in the queue · {reviewed} reviewed {last !== "" && `· ${last}`}
-      </p>
+      <div className="review-progress">
+        <span className="pill due">{queue.length} left</span>
+        <span>{reviewed} reviewed</span>
+        {last !== "" && <span>· {last}</span>}
+      </div>
 
-      <div className="card-face" data-testid="front">{card.front}</div>
+      <div className="review-card">
+        <div className="review-front" data-testid="front">{card.front}</div>
+        {revealed && <div className="review-back" data-testid="back">{card.back}</div>}
+      </div>
 
       {revealed ? (
-        <>
-          <div className="card-face" data-testid="back">{card.back}</div>
-          <div className="grades">
-            {(Object.entries(KEYS) as [string, Grade][]).map(([key, value]) => (
-              <button key={key} onClick={() => void grade(value)}>
-                <kbd>{key}</kbd> {LABELS[value]}
-              </button>
-            ))}
-          </div>
-        </>
+        <div className="grades">
+          {(Object.entries(KEYS) as [string, Grade][]).map(([key, value]) => (
+            <button
+              key={key}
+              className={value === "good" ? "primary" : ""}
+              onClick={() => void grade(value)}
+            >
+              <kbd>{key}</kbd>{LABELS[value]}
+            </button>
+          ))}
+        </div>
       ) : (
-        <button onClick={() => setRevealed(true)} data-testid="reveal">
-          <kbd>space</kbd> Show answer
-        </button>
+        <div className="grades">
+          <button className="primary" onClick={() => setRevealed(true)} data-testid="reveal">
+            <kbd>space</kbd>Show answer
+          </button>
+        </div>
       )}
 
       {error !== "" && <p className="error" role="alert">{error}</p>}

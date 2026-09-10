@@ -2,11 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import { api, type Card, type Deck } from "../api.js";
 import { messageOf } from "../App.js";
+import { Dialog } from "../Dialog.js";
 
 export function DeckPage() {
   const { id } = useParams();
   const [deck, setDeck] = useState<Deck | undefined>(undefined);
   const [cards, setCards] = useState<Card[]>([]);
+  const [adding, setAdding] = useState(false);
   const [front, setFront] = useState("");
   const [back, setBack] = useState("");
   const [error, setError] = useState("");
@@ -34,6 +36,7 @@ export function DeckPage() {
       setCards([...cards, card]);
       setFront("");
       setBack("");
+      setAdding(false);
     } catch (caught) {
       setError(messageOf(caught));
     }
@@ -41,45 +44,83 @@ export function DeckPage() {
 
   const due = cards.filter((card) => card.due === true).length;
 
-  if (error !== "" && deck === undefined) return <p className="error" role="alert">{error}</p>;
+  if (deck === undefined) {
+    return error !== "" ? <p className="error" role="alert">{error}</p> : <p className="muted">Loading…</p>;
+  }
 
   return (
     <>
-      <h1>{deck?.name ?? "…"}</h1>
-      <p className="muted">
-        {cards.length} card{cards.length === 1 ? "" : "s"} · {due} due today{" "}
-        {due > 0 && <Link to={`/decks/${id}/review`}>Start reviewing →</Link>}
+      <p className="muted" style={{ marginBottom: ".5rem" }}>
+        <Link to="/">← All decks</Link>
       </p>
 
-      <ul>
-        {cards.map((card) => (
-          <li key={card.id}>
-            <div className="row">
-              <span>{card.front}</span>
-              <span className="muted">
-                {card.due === true ? "due" : `due ${card.dueOn}`} · ease {card.ease.toFixed(2)}
-              </span>
-            </div>
-            <div className="muted">{card.back}</div>
-          </li>
-        ))}
-      </ul>
+      <div className="page-head">
+        <div>
+          <h1>{deck.name}</h1>
+          <p className="subtitle">
+            {cards.length} card{cards.length === 1 ? "" : "s"} ·{" "}
+            {due > 0 ? `${due} due today` : "nothing due today"}
+          </p>
+        </div>
+        <span style={{ display: "flex", gap: ".5rem" }}>
+          <button onClick={() => { setAdding(true); setError(""); }}>Add card</button>
+          {due > 0 && (
+            <Link to={`/decks/${id}/review`}>
+              <button className="primary">Review {due}</button>
+            </Link>
+          )}
+        </span>
+      </div>
 
-      <h2>New card</h2>
-      <form onSubmit={(event) => void addCard(event)}>
-        <label>
-          <span>Front</span>
-          <input name="front" value={front} required
-                 onChange={(event) => setFront(event.target.value)} />
-        </label>
-        <label>
-          <span>Back</span>
-          <textarea name="back" value={back} required rows={3}
-                    onChange={(event) => setBack(event.target.value)} />
-        </label>
-        {error !== "" && <p className="error" role="alert">{error}</p>}
-        <button type="submit">Add card</button>
-      </form>
+      {cards.length === 0 && <p className="empty">No cards yet. Add one to start reviewing.</p>}
+
+      <div className="stack">
+        {cards.map((card) => (
+          // <details> rather than state per card: answers stay hidden until
+          // asked for, and it is keyboard-operable and screen-reader-correct
+          // without any JavaScript. Seeing the back while browsing would spoil
+          // the card you are about to be tested on, which is the entire point
+          // of the app.
+          <details className="item card" key={card.id}>
+            <summary>
+              <span>{card.front}</span>
+              <span style={{ display: "flex", gap: ".4rem", alignItems: "center" }}>
+                {card.due === true && <span className="pill due">due</span>}
+                <span className="reveal">show answer</span>
+              </span>
+            </summary>
+            <div className="answer">{card.back}</div>
+            <div className="meta">
+              {card.repetitions === 0
+                ? "Not reviewed yet"
+                : `${card.repetitions} in a row · ease ${card.ease.toFixed(2)} · every ${card.intervalDays} day${card.intervalDays === 1 ? "" : "s"}`}
+              {card.due === true ? "" : ` · next on ${card.dueOn}`}
+            </div>
+          </details>
+        ))}
+      </div>
+
+      {error !== "" && !adding && <p className="error" role="alert">{error}</p>}
+
+      <Dialog open={adding} title="New card" onClose={() => setAdding(false)}>
+        <form onSubmit={(event) => void addCard(event)}>
+          <label>
+            <span>Front — the question</span>
+            <input name="front" value={front} required autoFocus
+                   onChange={(event) => setFront(event.target.value)} />
+          </label>
+          <label>
+            <span>Back — the answer</span>
+            <textarea name="back" value={back} required rows={4}
+                      onChange={(event) => setBack(event.target.value)} />
+          </label>
+          {error !== "" && <p className="error" role="alert">{error}</p>}
+          <div className="dialog-actions">
+            <button type="button" onClick={() => setAdding(false)}>Cancel</button>
+            <button type="submit" className="primary">Add card</button>
+          </div>
+        </form>
+      </Dialog>
     </>
   );
 }

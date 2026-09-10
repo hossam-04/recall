@@ -70,7 +70,14 @@ export const api = {
 };
 
 export type User = { id: string; email: string };
-export type Deck = { id: string; name: string; createdAt: string };
+export type Deck = {
+  id: string;
+  name: string;
+  createdAt: string;
+  /** Counted in SQL — see decksOf in src/http/routes/decks.ts. */
+  cardCount: number;
+  dueCount: number;
+};
 export type Card = {
   id: string;
   front: string;

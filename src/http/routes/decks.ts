@@ -11,7 +11,33 @@ import { parseBody } from "../server.js";
  */
 const CreateDeck = z.object({ name: z.string().trim().min(1).max(100) });
 
-type Deck = { id: string; name: string; createdAt: Date };
+type Deck = {
+  id: string; name: string; createdAt: Date;
+  cardCount: number; dueCount: number;
+};
+
+/**
+ * One shape for a deck, whether one or many are asked for. Counting in SQL
+ * rather than fetching every card and counting in JavaScript: the deck list
+ * would otherwise pull every card of every deck across the wire to display two
+ * numbers, and get slower with each card added.
+ *
+ * `left join` so a deck with no cards still appears, with zeroes. An inner join
+ * would silently drop empty decks — which are exactly the decks a new user has.
+ */
+const DECK_COLUMNS = `
+  select d.id, d.name, d.created_at as "createdAt",
+         count(c.id)::int as "cardCount",
+         (count(c.id) filter (where c.due_on <= current_date))::int as "dueCount"
+    from decks d left join cards c on c.deck_id = d.id`;
+
+export async function decksOf(pool: Pool, userId: string): Promise<Deck[]> {
+  const { rows } = await pool.query<Deck>(
+    `${DECK_COLUMNS} where d.user_id = $1 group by d.id order by d.name`,
+    [userId],
+  );
+  return rows;
+}
 
 /**
  * Resolves a deck the caller owns, answering the client itself otherwise.
@@ -29,8 +55,12 @@ export async function requireOwnedDeck(
   reply: FastifyReply,
 ): Promise<Deck | undefined> {
   const { rows } = await pool.query<Deck & { ownerId: string }>(
-    `select id, name, created_at as "createdAt", user_id as "ownerId"
-       from decks where id = $1`,
+    `select d.id, d.name, d.created_at as "createdAt", d.user_id as "ownerId",
+            count(c.id)::int as "cardCount",
+            (count(c.id) filter (where c.due_on <= current_date))::int as "dueCount"
+       from decks d left join cards c on c.deck_id = d.id
+      where d.id = $1
+      group by d.id`,
     [deckId],
   );
   const deck = rows[0];
@@ -61,7 +91,7 @@ export function registerDeckRoutes(app: FastifyInstance, pool: Pool): void {
     try {
       const { rows } = await pool.query<Deck>(
         `insert into decks (user_id, name) values ($1, $2)
-         returning id, name, created_at as "createdAt"`,
+         returning id, name, created_at as "createdAt", 0 as "cardCount", 0 as "dueCount"`,
         [userId, body.name],
       );
       return await reply.status(201).send(rows[0]);
@@ -77,14 +107,9 @@ export function registerDeckRoutes(app: FastifyInstance, pool: Pool): void {
   app.get("/decks", async (request, reply) => {
     const userId = currentUser(request);
 
-    // The `where user_id` is the authorisation. Filtering in JavaScript after
-    // selecting everything would work until the first time someone forgets.
-    const { rows } = await pool.query<Deck>(
-      `select id, name, created_at as "createdAt" from decks
-        where user_id = $1 order by name`,
-      [userId],
-    );
-    return rows;
+    // The `where user_id` inside decksOf is the authorisation. Filtering in
+    // JavaScript after selecting everything works until someone forgets once.
+    return await decksOf(pool, userId);
   });
 
   app.get<{ Params: { id: string } }>("/decks/:id", async (request, reply) => {

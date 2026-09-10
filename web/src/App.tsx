@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Navigate, Route, Routes, useNavigate } from "react-router";
+import { Link, Navigate, Route, Routes, useNavigate } from "react-router";
 import { ApiError, api, type User } from "./api.js";
 import { LoginPage } from "./pages/LoginPage.js";
 import { DecksPage } from "./pages/DecksPage.js";
@@ -52,9 +52,10 @@ export function App() {
   return (
     <main>
       <nav>
-        <a href="/">recall</a>
-        <span className="muted">
-          {session.user.email} <button onClick={() => void signOut()}>Sign out</button>
+        <Link className="brand" to="/">recall</Link>
+        <span className="who">
+          {session.user.email}
+          <button className="quiet" onClick={() => void signOut()}>Sign out</button>
         </span>
       </nav>
       <Routes>

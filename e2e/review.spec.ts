@@ -21,15 +21,18 @@ async function register(page: Page, email: string): Promise<void> {
 }
 
 async function createDeck(page: Page, name: string): Promise<void> {
+  await page.getByRole("button", { name: "New deck" }).click();
   await page.getByLabel("Name").fill(name);
   await page.getByRole("button", { name: "Create deck" }).click();
   await expect(page.getByRole("link", { name })).toBeVisible();
 }
 
 async function addCard(page: Page, front: string, back: string): Promise<void> {
-  await page.getByLabel("Front").fill(front);
-  await page.getByLabel("Back").fill(back);
   await page.getByRole("button", { name: "Add card" }).click();
+  await page.getByLabel(/^Front/).fill(front);
+  await page.getByLabel(/^Back/).fill(back);
+  // The dialog's own submit, not the header button that opened it.
+  await page.getByRole("dialog").getByRole("button", { name: "Add card" }).click();
   await expect(page.getByText(front)).toBeVisible();
 }
 
@@ -42,7 +45,11 @@ test("sign up, build a deck, and review it entirely by keyboard", async ({ page 
   await addCard(page, "What is a trie?", "A prefix tree");
   await expect(page.getByText("2 cards · 2 due today")).toBeVisible();
 
-  await page.getByRole("link", { name: /Start reviewing/ }).click();
+  // An answer must not be visible while browsing the deck — it is the card you
+  // are about to be tested on.
+  await expect(page.getByText("A tree with the heap property")).toBeHidden();
+
+  await page.getByRole("button", { name: /^Review/ }).click();
   await expect(page.getByTestId("front")).toBeVisible();
 
   // Space reveals, then a number grades. No mouse.
@@ -66,7 +73,7 @@ test("a card graded 'again' comes back in the same session", async ({ page }) =>
   await page.getByRole("link", { name: "Algorithms" }).click();
   await addCard(page, "What is a heap?", "A tree with the heap property");
 
-  await page.getByRole("link", { name: /Start reviewing/ }).click();
+  await page.getByRole("button", { name: /^Review/ }).click();
   // Wait for the card before typing at it. The keyboard handler ignores keys
   // while the due-cards fetch is still in flight — correctly, there is nothing
   // to grade — so a press sent too early is silently dropped and the failure
@@ -79,7 +86,7 @@ test("a card graded 'again' comes back in the same session", async ({ page }) =>
   // ADR-009: it is re-queued rather than scheduled for tomorrow and lost.
   await expect(page.getByText("Again — back later this session")).toBeVisible();
   await expect(page.getByTestId("front")).toHaveText("What is a heap?");
-  await expect(page.getByText("1 in the queue")).toBeVisible();
+  await expect(page.getByText("1 left")).toBeVisible();
 
   await page.keyboard.press("Space");
   await page.keyboard.press("3");
@@ -97,10 +104,10 @@ test("the session survives a hard refresh, and logout ends it", async ({ page })
   await expect(page.getByText(email)).toBeVisible();
 
   await page.getByRole("button", { name: "Sign out" }).click();
-  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
 });
 
 test("one user cannot open another user's deck", async ({ page, browser }) => {
