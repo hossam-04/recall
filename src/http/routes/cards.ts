@@ -13,9 +13,16 @@ const CreateCard = z.object({
 });
 const SubmitReview = z.object({ grade: z.enum(["again", "hard", "good", "easy"]) });
 
+/**
+ * One shape for a card, used by create and by both listings. A create that
+ * returns a different representation than a read is a trap: the client stores
+ * what it got back, and the missing field silently reads as absent rather than
+ * as false. That is exactly how the deck page came to show "0 due" for cards it
+ * had just created.
+ */
 type CardRow = {
   id: string; front: string; back: string;
-  repetitions: number; intervalDays: number; ease: number; dueOn: string;
+  repetitions: number; intervalDays: number; ease: number; dueOn: string; due: boolean;
 };
 
 export function registerCardRoutes(app: FastifyInstance, pool: Pool): void {
@@ -32,7 +39,7 @@ export function registerCardRoutes(app: FastifyInstance, pool: Pool): void {
       `insert into cards (deck_id, front, back, due_on)
        select id, $2, $3, current_date from decks where id = $1 and user_id = $4
        returning id, front, back, repetitions, interval_days as "intervalDays",
-                 ease, due_on::text as "dueOn"`,
+                 ease, due_on::text as "dueOn", (due_on <= current_date) as due`,
       [request.params.id, body.front, body.back, userId],
     );
 
@@ -45,7 +52,7 @@ export function registerCardRoutes(app: FastifyInstance, pool: Pool): void {
     const userId = currentUser(request);
     if ((await requireOwnedDeck(pool, request.params.id, userId, reply)) === undefined) return;
 
-    const { rows } = await pool.query<CardRow & { due: boolean }>(
+    const { rows } = await pool.query<CardRow>(
       `select id, front, back, repetitions, interval_days as "intervalDays",
               ease, due_on::text as "dueOn", (due_on <= current_date) as due
          from cards where deck_id = $1 order by id`,

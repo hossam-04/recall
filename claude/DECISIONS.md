@@ -747,3 +747,65 @@ behalf is one no browser is holding, so those sessions would fail every write
 anyway — and issuing a *real* token to a session created before the protection
 existed is precisely the silent retrofit that should not happen. Everyone signs
 in again.
+
+---
+
+## ADR-023 — The browser talks only to Vite, which proxies `/api`
+
+**Decision:** the page is served from :5173 and Vite forwards `/api` to Fastify
+on :3000. The API is mounted under `/api` so the root path space belongs to
+React Router.
+
+*Alternatives:* the page on :5173 calling :3000 directly, with CORS.
+
+**Why:** the proxy makes every request same-origin, so the session cookie is
+sent with no configuration at all. Calling :3000 directly is cross-origin, which
+needs CORS with credentials **and** a cookie marked `SameSite=None; Secure` — so
+the flag ADR-015 spent a page arguing for would be given up in development,
+where it is hardest to notice and easiest to carry into production.
+
+The `/api` mount is not cosmetic: React Router wants `/decks/:id` to be a page
+and the API already owned it as JSON. Same URL, two meanings, and a proxy cannot
+choose between them.
+
+Registered as one encapsulated Fastify context with a prefix rather than by
+prefixing every route string, so the prefix is a property of the mount instead
+of something four modules each remember. The parent's authentication and CSRF
+hooks still apply — Fastify hooks propagate into child contexts.
+
+---
+
+## ADR-024 — What the browser caught that nothing else did
+
+Three defects reached Playwright with `tsc`, 100 unit and integration tests, and
+26 smoke assertions all green. Recorded because the pattern is the point: each
+one lived in the gap between two things that were individually correct.
+
+**1. Create returned a different shape than read.** `POST /decks/:id/cards`
+returned a card without the `due` field that `GET` includes. Both endpoints were
+correct in isolation. The UI stored what create returned, `due` read as
+`undefined` rather than `false`, the deck page counted zero due cards, and
+"Start reviewing" never appeared. Fixed at the API — one representation of a
+card — with a test asserting create and list return the identical object.
+
+**2. Vite binds `localhost`, which is `::1` here.** The health check addressed
+`127.0.0.1` and timed out. A server that is running and unreachable looks
+exactly like a server that failed to start. `host: "127.0.0.1"` is pinned now.
+
+**3. Playwright starts `webServer` before `globalSetup`.** The API booted
+against a database that did not exist yet and died with Postgres `3D000`, whose
+stack trace says nothing about ordering. Database creation moved ahead of
+Playwright entirely, as `npm run e2e`.
+
+And one that was the test's fault rather than the app's: a `keyboard.press`
+issued before the due-cards fetch resolved was swallowed by the handler's
+`if (card === undefined) return`, and surfaced four assertions later as
+"0 reviewed". The app was right to ignore keys with nothing to grade.
+
+**Verified by sabotage, since the plan named these as failing silently:**
+removing the `x-csrf-token` header from the client fails three specs; switching
+`credentials` to `omit` fails all four; making `again` schedule for tomorrow
+instead of re-queueing fails the ADR-009 spec.
+
+*Would revisit if:* `verify` gets slow enough to discourage running it. It is
+about 11 seconds.

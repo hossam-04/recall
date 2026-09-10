@@ -16,6 +16,12 @@ export default defineConfig({
     // suite require Postgres, including the pure unit tests — accepted, because
     // the done condition is already "from a clean checkout against an empty
     // database, npm run verify exits 0".
+    // Scoped to tests/. Without this, vitest's default glob also collects
+    // e2e/*.spec.ts, which imports @playwright/test and cannot run here — it
+    // fails as a file-level collection error while the test count still reads
+    // green, which is a confusing way to find out.
+    include: ["tests/**/*.test.ts"],
+
     globalSetup: ["tests/support/global-setup.ts"],
 
     // Test FILES run in parallel by default, and every database test shares one

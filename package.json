@@ -7,15 +7,19 @@
     "node": ">=26"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p web/tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "verify": "npm run typecheck && npm run test && npm run smoke",
+    "verify": "npm run typecheck && npm run test && npm run smoke && npm run e2e",
     "review": "tsx --env-file-if-exists=.env src/cli/review.ts",
     "migrate": "tsx --env-file-if-exists=.env scripts/migrate.ts",
-    "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
+    "dev": "npm run dev:api & npm run dev:web",
     "start": "tsx --env-file-if-exists=.env src/index.ts",
-    "smoke": "./scripts/api-smoke.sh"
+    "smoke": "./scripts/api-smoke.sh",
+    "dev:api": "tsx watch --env-file-if-exists=.env src/index.ts",
+    "dev:web": "vite --config web/vite.config.ts",
+    "build:web": "vite build --config web/vite.config.ts",
+    "e2e": "tsx e2e/prepare-db.ts && playwright test"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

@@ -1,0 +1,49 @@
+:root {
+  --bg: #fbfbfa;
+  --fg: #1c1b19;
+  --muted: #6b6862;
+  --line: #e0ddd6;
+  --accent: #2f6f4e;
+  --danger: #a33;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #17181a; --fg: #e8e6e1; --muted: #8f8c85; --line: #2c2e31; --accent: #6fbf8f; }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.55 ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif;
+}
+main { max-width: 44rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+h1 { font-size: 1.4rem; margin: 0 0 1.25rem; }
+h2 { font-size: 1.05rem; margin: 2rem 0 .75rem; font-weight: 600; }
+a { color: var(--accent); }
+button {
+  font: inherit; padding: .45rem .9rem; border: 1px solid var(--line);
+  border-radius: 6px; background: transparent; color: var(--fg); cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: default; }
+input, textarea {
+  font: inherit; width: 100%; padding: .5rem .6rem; border: 1px solid var(--line);
+  border-radius: 6px; background: var(--bg); color: var(--fg);
+}
+label { display: block; margin-bottom: .75rem; }
+label span { display: block; font-size: .85rem; color: var(--muted); margin-bottom: .25rem; }
+form { max-width: 24rem; }
+ul { list-style: none; padding: 0; }
+li { border-bottom: 1px solid var(--line); padding: .7rem 0; }
+.row { display: flex; gap: .75rem; align-items: baseline; justify-content: space-between; }
+.muted { color: var(--muted); font-size: .85rem; }
+.error { color: var(--danger); margin: .5rem 0; }
+nav { border-bottom: 1px solid var(--line); padding: .75rem 0; margin-bottom: 1.5rem;
+      display: flex; justify-content: space-between; align-items: center; }
+kbd {
+  font: .8rem ui-monospace, monospace; border: 1px solid var(--line);
+  border-bottom-width: 2px; border-radius: 4px; padding: .1rem .35rem; color: var(--muted);
+}
+.card-face { font-size: 1.25rem; margin: 2.5rem 0; min-height: 3rem; }
+.grades { display: flex; gap: .5rem; flex-wrap: wrap; }

@@ -42,6 +42,27 @@ describe("GET /api/me", () => {
   });
 });
 
+describe("POST /api/decks/:id/cards", () => {
+  test("returns the same shape a listing does, including `due`", async () => {
+    const deck = await app.inject({
+      method: "POST", url: "/api/decks", payload: { name: "Algorithms" }, ...as(),
+    });
+    const created = await app.inject({
+      method: "POST", url: `/api/decks/${deck.json().id}/cards`,
+      payload: { front: "q", back: "a" }, ...as(),
+    });
+
+    // A create that omits a field the listing has is a trap: the client stores
+    // what it got back and the absence reads as false. The UI showed "0 due"
+    // for cards it had just created because of exactly this.
+    const listed = (await app.inject({
+      method: "GET", url: `/api/decks/${deck.json().id}/cards`, ...as(),
+    })).json();
+    expect(created.json()).toEqual(listed[0]);
+    expect(created.json().due).toBe(true);
+  });
+});
+
 describe("GET /api/decks/:id/cards", () => {
   test("lists every card with whether it is due", async () => {
     const deckId = await deckWithCards("first", "second");
