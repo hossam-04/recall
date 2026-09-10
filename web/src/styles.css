@@ -71,8 +71,18 @@ label > span { display: block; font-size: .82rem; color: var(--muted); margin-bo
   padding: .85rem 1rem;
 }
 .item-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
-.deck-link { color: var(--fg); text-decoration: none; font-weight: 550; }
-.deck-link:hover { color: var(--accent); }
+.pills { display: flex; gap: .4rem; align-items: center; }
+
+/* The entire panel is the target. */
+a.deck-item {
+  display: block; color: inherit; text-decoration: none;
+  transition: border-color .12s, background .12s, transform .06s;
+}
+a.deck-item:hover { border-color: var(--accent); background: var(--accent-soft); }
+a.deck-item:active { transform: scale(.995); }
+a.deck-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.deck-name { font-weight: 550; }
+a.deck-item:hover .deck-name { color: var(--accent); }
 
 .pill {
   font-size: .78rem; padding: .15rem .5rem; border-radius: 999px;

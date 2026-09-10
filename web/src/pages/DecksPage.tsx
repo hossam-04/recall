@@ -59,17 +59,22 @@ export function DecksPage() {
 
       <div className="stack">
         {decks?.map((deck) => (
-          <div className="item" key={deck.id}>
+          // The whole panel is the link, not just the name. A row that looks
+          // clickable but only responds on four words of text is a smaller
+          // target than it appears, which is worse than one that plainly is not
+          // clickable. Nothing inside is interactive, so a block-level anchor
+          // stays valid — no nested controls.
+          <Link className="item deck-item" key={deck.id} to={`/decks/${deck.id}`}>
             <div className="item-row">
-              <Link className="deck-link" to={`/decks/${deck.id}`}>{deck.name}</Link>
-              <span style={{ display: "flex", gap: ".4rem" }}>
+              <span className="deck-name">{deck.name}</span>
+              <span className="pills">
                 <span className="pill">
                   {deck.cardCount} card{deck.cardCount === 1 ? "" : "s"}
                 </span>
                 {deck.dueCount > 0 && <span className="pill due">{deck.dueCount} due</span>}
               </span>
             </div>
-          </div>
+          </Link>
         ))}
       </div>
 
