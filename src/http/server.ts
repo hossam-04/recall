@@ -72,11 +72,28 @@ export function buildServer(pool: Pool): FastifyInstance {
   // not something each route opts into.
   registerAuthentication(app, pool);
 
-  app.get("/health", async () => ({ ok: true }));
-  registerUserRoutes(app, pool);
-  registerSessionRoutes(app, pool);
-  registerDeckRoutes(app, pool);
-  registerCardRoutes(app, pool);
+  /**
+   * Everything the browser calls lives under /api, so the root path space
+   * belongs to the SPA. Without this, React Router's `/decks/:id` page and the
+   * API's `/decks/:id` JSON are the same URL, and the dev proxy has no way to
+   * tell which one a request wants.
+   *
+   * Registered inside one encapsulated context rather than by prefixing every
+   * string: the prefix is then a property of the mount, not something four
+   * route modules each have to remember. Hooks added to the parent — the
+   * authentication and CSRF preHandler above — still apply, because Fastify
+   * hooks propagate down into child contexts.
+   */
+  void app.register(
+    async (api) => {
+      api.get("/health", async () => ({ ok: true }));
+      registerUserRoutes(api, pool);
+      registerSessionRoutes(api, pool);
+      registerDeckRoutes(api, pool);
+      registerCardRoutes(api, pool);
+    },
+    { prefix: "/api" },
+  );
 
   return app;
 }

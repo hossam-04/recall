@@ -35,7 +35,7 @@ beforeEach(async () => {
   app.post("/echo", async () => ({ ok: true }));
   // A path of its own: the real /decks exists on every server now, and reusing
   // that name would test the route instead of parseBody.
-  app.post("/parse-body-probe", async (request, reply) => {
+  app.post("/api-probe", async (request, reply) => {
     const body = parseBody(CreateDeck, request.body, reply);
     if (body === undefined) return;
     return reply.status(201).send({ received: body });
@@ -48,7 +48,7 @@ const as = () => ({ headers: user.headers });
 
 describe("the HTTP boundary", () => {
   test("serves health and 404s an unknown route", async () => {
-    expect((await app.inject({ method: "GET", url: "/health" })).json()).toEqual({ ok: true });
+    expect((await app.inject({ method: "GET", url: "/api/health" })).json()).toEqual({ ok: true });
     expect((await app.inject({ method: "GET", url: "/nope", ...as() })).statusCode).toBe(404);
   });
 
@@ -72,7 +72,7 @@ describe("the HTTP boundary", () => {
 
 describe("parseBody", () => {
   const post = (payload: unknown) =>
-    app.inject({ method: "POST", url: "/parse-body-probe", payload: payload as object, ...as() });
+    app.inject({ method: "POST", url: "/api-probe", payload: payload as object, ...as() });
 
   test("accepts a valid body", async () => {
     const response = await post({ name: "Algorithms" });

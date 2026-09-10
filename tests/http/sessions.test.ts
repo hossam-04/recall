@@ -12,7 +12,7 @@ const CREDENTIALS = { email: "a@x.com", password: "a-good-password" };
 
 async function registered() {
   const server = app();
-  await server.inject({ method: "POST", url: "/users", payload: CREDENTIALS });
+  await server.inject({ method: "POST", url: "/api/users", payload: CREDENTIALS });
   return server;
 }
 
@@ -50,7 +50,7 @@ describe("session ids", () => {
 describe("POST /sessions", () => {
   test("sets an httpOnly, SameSite cookie holding a real session row", async () => {
     const response = await (await registered()).inject({
-      method: "POST", url: "/sessions", payload: CREDENTIALS,
+      method: "POST", url: "/api/sessions", payload: CREDENTIALS,
     });
 
     expect(response.statusCode).toBe(201);
@@ -66,10 +66,10 @@ describe("POST /sessions", () => {
   test("says the same thing for a wrong password and an unknown email", async () => {
     const server = await registered();
     const wrongPassword = await server.inject({
-      method: "POST", url: "/sessions", payload: { ...CREDENTIALS, password: "wrong-password" },
+      method: "POST", url: "/api/sessions", payload: { ...CREDENTIALS, password: "wrong-password" },
     });
     const noSuchUser = await server.inject({
-      method: "POST", url: "/sessions", payload: { email: "nobody@x.com", password: "whatever!" },
+      method: "POST", url: "/api/sessions", payload: { email: "nobody@x.com", password: "whatever!" },
     });
 
     expect(wrongPassword.statusCode).toBe(401);
@@ -82,7 +82,7 @@ describe("POST /sessions", () => {
     const server = await registered();
     const time = async (payload: object) => {
       const started = performance.now();
-      await server.inject({ method: "POST", url: "/sessions", payload });
+      await server.inject({ method: "POST", url: "/api/sessions", payload });
       return performance.now() - started;
     };
 
@@ -99,11 +99,11 @@ describe("POST /sessions", () => {
 describe("DELETE /sessions", () => {
   test("revokes the row, so a kept cookie stops working", async () => {
     const server = await registered();
-    const login = await server.inject({ method: "POST", url: "/sessions", payload: CREDENTIALS });
+    const login = await server.inject({ method: "POST", url: "/api/sessions", payload: CREDENTIALS });
     const id = sessionCookie(login.headers["set-cookie"]) ?? "";
 
     const logout = await server.inject({
-      method: "DELETE", url: "/sessions", headers: { cookie: `${SESSION_COOKIE}=${id}` },
+      method: "DELETE", url: "/api/sessions", headers: { cookie: `${SESSION_COOKIE}=${id}` },
     });
 
     expect(logout.statusCode).toBe(204);
@@ -112,6 +112,6 @@ describe("DELETE /sessions", () => {
   });
 
   test("is 204 with no cookie at all", async () => {
-    expect((await app().inject({ method: "DELETE", url: "/sessions" })).statusCode).toBe(204);
+    expect((await app().inject({ method: "DELETE", url: "/api/sessions" })).statusCode).toBe(204);
   });
 });

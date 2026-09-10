@@ -24,10 +24,10 @@ describe("every route, enumerated", () => {
     expect(app.routeTable.length).toBeGreaterThanOrEqual(8);
     const publicRoutes = app.routeTable.filter((r) => isPublic(r.method, r.url));
     expect(publicRoutes.map((r) => `${r.method} ${r.url}`).sort()).toEqual([
-      "DELETE /sessions",
-      "GET /health",
-      "POST /sessions",
-      "POST /users",
+      "DELETE /api/sessions",
+      "GET /api/health",
+      "POST /api/sessions",
+      "POST /api/users",
     ]);
   });
 
@@ -50,11 +50,11 @@ describe("every route, enumerated", () => {
     const as = (who: SignedIn) => ({ headers: who.headers });
 
     const deck = await app.inject({
-      method: "POST", url: "/decks", payload: { name: "Algorithms" }, ...as(alice),
+      method: "POST", url: "/api/decks", payload: { name: "Algorithms" }, ...as(alice),
     });
     const deckId = deck.json().id;
     const card = await app.inject({
-      method: "POST", url: `/decks/${deckId}/cards`,
+      method: "POST", url: `/api/decks/${deckId}/cards`,
       payload: { front: "q", back: "a" }, ...as(alice),
     });
     const cardId = card.json().id;

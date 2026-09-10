@@ -46,10 +46,10 @@ DATABASE_URL="$DB" PORT="$PORT" npm run start --silent >/tmp/smoke-server.log 2>
 SERVER_PID=$!
 
 for _ in $(seq 1 50); do
-  curl -sf "$BASE/health" >/dev/null 2>&1 && break
+  curl -sf "$BASE/api/health" >/dev/null 2>&1 && break
   sleep 0.2
 done
-curl -sf "$BASE/health" >/dev/null || { cat /tmp/smoke-server.log; fail "server never came up"; }
+curl -sf "$BASE/api/health" >/dev/null || { cat /tmp/smoke-server.log; fail "server never came up"; }
 pass "server listening on $PORT, migrations applied on boot"
 
 json=(-H 'content-type: application/json')
@@ -61,47 +61,47 @@ csrf() { awk '/recall_csrf/ { print $7 }' "$1"; }
 A='{"email":"alice@example.com","password":"a-good-password"}'
 B='{"email":"bob@example.com","password":"a-good-password"}'
 
-expect 201 "alice registers"      -X POST "${json[@]}" -d "$A" "$BASE/users"
-expect 409 "duplicate is refused" -X POST "${json[@]}" -d "$A" "$BASE/users"
-expect 401 "wrong password"       -X POST "${json[@]}" -d '{"email":"alice@example.com","password":"nope-nope"}' "$BASE/sessions"
-expect 201 "alice logs in"        -X POST "${json[@]}" -d "$A" -c "$JAR_A" "$BASE/sessions"
+expect 201 "alice registers"      -X POST "${json[@]}" -d "$A" "$BASE/api/users"
+expect 409 "duplicate is refused" -X POST "${json[@]}" -d "$A" "$BASE/api/users"
+expect 401 "wrong password"       -X POST "${json[@]}" -d '{"email":"alice@example.com","password":"nope-nope"}' "$BASE/api/sessions"
+expect 201 "alice logs in"        -X POST "${json[@]}" -d "$A" -c "$JAR_A" "$BASE/api/sessions"
 grep -q recall_session "$JAR_A" && pass "session cookie was set" || fail "no session cookie"
 grep -qi httponly    "$JAR_A" && pass "session cookie is HttpOnly" || fail "session cookie is not HttpOnly"
 [ -n "$(csrf "$JAR_A")" ] && pass "CSRF token cookie is readable" || fail "no readable CSRF cookie"
 
-expect 401 "no cookie is refused" "$BASE/decks"
+expect 401 "no cookie is refused" "$BASE/api/decks"
 expect 403 "a write with the cookie but no CSRF token" -X POST "${json[@]}" \
-  -d '{"name":"Algorithms"}' -b "$JAR_A" "$BASE/decks"
+  -d '{"name":"Algorithms"}' -b "$JAR_A" "$BASE/api/decks"
 CSRF_A="-H x-csrf-token:$(csrf "$JAR_A")"
 # shellcheck disable=SC2086
-expect 201 "alice creates a deck" -X POST "${json[@]}" $CSRF_A -d '{"name":"Algorithms"}' -b "$JAR_A" "$BASE/decks"
+expect 201 "alice creates a deck" -X POST "${json[@]}" $CSRF_A -d '{"name":"Algorithms"}' -b "$JAR_A" "$BASE/api/decks"
 DECK=$(sed -n 's/.*"id":"\([0-9]*\)".*/\1/p' /tmp/smoke-body)
 
 # shellcheck disable=SC2086
 expect 201 "alice adds a card" -X POST "${json[@]}" $CSRF_A \
-  -d '{"front":"What is a heap?","back":"A tree with the heap property"}' -b "$JAR_A" "$BASE/decks/$DECK/cards"
+  -d '{"front":"What is a heap?","back":"A tree with the heap property"}' -b "$JAR_A" "$BASE/api/decks/$DECK/cards"
 CARD=$(sed -n 's/.*"id":"\([0-9]*\)".*/\1/p' /tmp/smoke-body)
 
-expect 200 "the card is due today" -b "$JAR_A" "$BASE/decks/$DECK/cards/due"
+expect 200 "the card is due today" -b "$JAR_A" "$BASE/api/decks/$DECK/cards/due"
 grep -q 'What is a heap' /tmp/smoke-body && pass "due list contains it" || fail "due list is empty"
 
 # shellcheck disable=SC2086
-expect 201 "grade: good"  -X POST "${json[@]}" $CSRF_A -d '{"grade":"good"}'  -b "$JAR_A" "$BASE/cards/$CARD/reviews"
+expect 201 "grade: good"  -X POST "${json[@]}" $CSRF_A -d '{"grade":"good"}'  -b "$JAR_A" "$BASE/api/cards/$CARD/reviews"
 grep -q '"intervalDays":1' /tmp/smoke-body && pass "first good -> 1 day" || fail "wrong interval: $(cat /tmp/smoke-body)"
 # shellcheck disable=SC2086
-expect 201 "grade: good again" -X POST "${json[@]}" $CSRF_A -d '{"grade":"good"}' -b "$JAR_A" "$BASE/cards/$CARD/reviews"
+expect 201 "grade: good again" -X POST "${json[@]}" $CSRF_A -d '{"grade":"good"}' -b "$JAR_A" "$BASE/api/cards/$CARD/reviews"
 grep -q '"intervalDays":6' /tmp/smoke-body && pass "second good -> 6 days" || fail "wrong interval: $(cat /tmp/smoke-body)"
 
 REVIEWS=$(psql "$DB" -tAc "select count(*) from reviews")
 [ "$REVIEWS" = "2" ] && pass "both reviews were recorded as events (ADR-010)" || fail "expected 2 review rows, got $REVIEWS"
 
-expect 201 "bob registers"  -X POST "${json[@]}" -d "$B" "$BASE/users"
-expect 201 "bob logs in"    -X POST "${json[@]}" -d "$B" -c "$JAR_B" "$BASE/sessions"
-expect 403 "bob is refused alice's deck" -b "$JAR_B" "$BASE/decks/$DECK"
-expect 200 "bob's own deck list is empty" -b "$JAR_B" "$BASE/decks"
+expect 201 "bob registers"  -X POST "${json[@]}" -d "$B" "$BASE/api/users"
+expect 201 "bob logs in"    -X POST "${json[@]}" -d "$B" -c "$JAR_B" "$BASE/api/sessions"
+expect 403 "bob is refused alice's deck" -b "$JAR_B" "$BASE/api/decks/$DECK"
+expect 200 "bob's own deck list is empty" -b "$JAR_B" "$BASE/api/decks"
 [ "$(cat /tmp/smoke-body)" = "[]" ] && pass "and it really is empty" || fail "bob sees $(cat /tmp/smoke-body)"
 
-expect 204 "alice logs out" -X DELETE -b "$JAR_A" "$BASE/sessions"
-expect 401 "her cookie stops working" -b "$JAR_A" "$BASE/decks"
+expect 204 "alice logs out" -X DELETE -b "$JAR_A" "$BASE/api/sessions"
+expect 401 "her cookie stops working" -b "$JAR_A" "$BASE/api/decks"
 
 echo; echo "  all good"

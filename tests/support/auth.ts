@@ -14,8 +14,8 @@ export type SignedIn = {
 /** Registers and logs in, returning everything needed to make a real request. */
 export async function signIn(app: FastifyInstance, email = "a@x.com"): Promise<SignedIn> {
   const credentials = { email, password: "a-good-password" };
-  await app.inject({ method: "POST", url: "/users", payload: credentials });
-  const login = await app.inject({ method: "POST", url: "/sessions", payload: credentials });
+  await app.inject({ method: "POST", url: "/api/users", payload: credentials });
+  const login = await app.inject({ method: "POST", url: "/api/sessions", payload: credentials });
 
   const raw = login.headers["set-cookie"];
   const all = Array.isArray(raw) ? raw : [raw];

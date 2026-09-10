@@ -23,7 +23,7 @@ const payload = { name: "x", front: "q", back: "a", grade: "good" };
 describe("the CSRF cookie", () => {
   test("is readable by the page, while the session cookie is not", async () => {
     const login = await app.inject({
-      method: "POST", url: "/sessions",
+      method: "POST", url: "/api/sessions",
       payload: { email: "alice@x.com", password: "a-good-password" },
     });
     const cookies = (login.headers["set-cookie"] as string[]).join("\n");
@@ -39,7 +39,7 @@ describe("the CSRF cookie", () => {
   });
 
   test("is cleared on logout along with the session", async () => {
-    const logout = await app.inject({ method: "DELETE", url: "/sessions", headers: alice.headers });
+    const logout = await app.inject({ method: "DELETE", url: "/api/sessions", headers: alice.headers });
     const cleared = (logout.headers["set-cookie"] as string[]).join("\n");
     expect(cleared).toContain(`${SESSION_COOKIE}=; Path=/`);
     expect(cleared).toContain(`${CSRF_COOKIE}=; Path=/`);
@@ -93,7 +93,7 @@ describe("every state-changing route", () => {
     expect(bob.csrfToken).not.toBe(alice.csrfToken);
 
     const response = await app.inject({
-      method: "POST", url: "/decks",
+      method: "POST", url: "/api/decks",
       headers: { cookie: alice.cookie, [CSRF_HEADER]: bob.csrfToken },
       payload: { name: "Algorithms" },
     });
@@ -115,7 +115,7 @@ describe("every state-changing route", () => {
     const forged = "f".repeat(43);
     const response = await app.inject({
       method: "POST",
-      url: "/decks",
+      url: "/api/decks",
       headers: {
         cookie: `${SESSION_COOKIE}=${alice.cookie.split(`${SESSION_COOKIE}=`)[1]?.split(";")[0]}; ${CSRF_COOKIE}=${forged}`,
         [CSRF_HEADER]: forged,
@@ -127,7 +127,7 @@ describe("every state-changing route", () => {
 
   test("accepts the matching token", async () => {
     const response = await app.inject({
-      method: "POST", url: "/decks", headers: alice.headers, payload: { name: "Algorithms" },
+      method: "POST", url: "/api/decks", headers: alice.headers, payload: { name: "Algorithms" },
     });
     expect(response.statusCode).toBe(201);
   });
@@ -139,7 +139,7 @@ describe("safe methods", () => {
     // promise our routes have to keep: a GET that mutates is a hole no token
     // closes, since a browser will follow an <img src> straight to it.
     const response = await app.inject({
-      method: "GET", url: "/decks", headers: { cookie: alice.cookie },
+      method: "GET", url: "/api/decks", headers: { cookie: alice.cookie },
     });
     expect(response.statusCode).toBe(200);
   });

@@ -6,7 +6,7 @@ import { testPool, useCleanDatabase } from "../support/db.js";
 useCleanDatabase();
 
 const register = (payload: unknown) =>
-  buildServer(testPool()).inject({ method: "POST", url: "/users", payload: payload as object });
+  buildServer(testPool()).inject({ method: "POST", url: "/api/users", payload: payload as object });
 
 describe("POST /users", () => {
   test("creates the account and answers with the user, never the hash", async () => {

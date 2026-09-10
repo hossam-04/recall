@@ -1,7 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
-import { EmailAlreadyRegistered, createUser } from "../../users/users.js";
+import { EmailAlreadyRegistered, createUser, findById } from "../../users/users.js";
+import { currentUser } from "../auth.js";
 import { parseBody } from "../server.js";
 
 /**
@@ -21,6 +22,20 @@ const Registration = z.object({
 });
 
 export function registerUserRoutes(app: FastifyInstance, pool: Pool): void {
+  /**
+   * Who am I. The SPA has no way to know on load whether its cookie is still
+   * good — the session cookie is HttpOnly, so JavaScript cannot inspect it, and
+   * an expired or revoked session looks identical to a valid one from the
+   * client side. Asking the server is the only honest answer.
+   */
+  app.get("/me", async (request) => {
+    const user = await findById(pool, currentUser(request));
+    // The hook authenticated against a session row whose user is gone — only
+    // possible if the user was deleted mid-request. Treat as signed out.
+    if (user === undefined) throw new Error("session user no longer exists");
+    return user;
+  });
+
   app.post("/users", async (request, reply) => {
     const body = parseBody(Registration, request.body, reply);
     if (body === undefined) return;

@@ -41,6 +41,19 @@ export function registerCardRoutes(app: FastifyInstance, pool: Pool): void {
     return await reply.status(201).send(card);
   });
 
+  app.get<{ Params: { id: string } }>("/decks/:id/cards", async (request, reply) => {
+    const userId = currentUser(request);
+    if ((await requireOwnedDeck(pool, request.params.id, userId, reply)) === undefined) return;
+
+    const { rows } = await pool.query<CardRow & { due: boolean }>(
+      `select id, front, back, repetitions, interval_days as "intervalDays",
+              ease, due_on::text as "dueOn", (due_on <= current_date) as due
+         from cards where deck_id = $1 order by id`,
+      [request.params.id],
+    );
+    return rows;
+  });
+
   app.get<{ Params: { id: string } }>("/decks/:id/cards/due", async (request, reply) => {
     const userId = currentUser(request);
 

@@ -20,10 +20,10 @@ declare module "fastify" {
  * open. See ADR-020.
  */
 const PUBLIC_ROUTES = new Set([
-  "GET /health",
-  "POST /users", // registering is how you get an account in the first place
-  "POST /sessions", // logging in
-  "DELETE /sessions", // logging out is harmless without a session, and answers 204
+  "GET /api/health",
+  "POST /api/users", // registering is how you get an account in the first place
+  "POST /api/sessions", // logging in
+  "DELETE /api/sessions", // logging out is harmless without a session, and answers 204
 ]);
 
 export function isPublic(method: string, url: string): boolean {

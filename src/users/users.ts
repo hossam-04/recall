@@ -64,6 +64,11 @@ export async function createUser(pool: Pool, email: string, password: string): P
   }
 }
 
+export async function findById(pool: Pool, id: string): Promise<User | undefined> {
+  const { rows } = await pool.query<User>("select id, email from users where id = $1", [id]);
+  return rows[0];
+}
+
 export async function findByEmail(
   pool: Pool,
   email: string,
