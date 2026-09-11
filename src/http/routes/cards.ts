@@ -5,8 +5,9 @@ import { currentUser } from "../auth.js";
 import { parseBody } from "../server.js";
 import { requireOwnedDeck } from "./decks.js";
 import { CARD_IS_LIVE } from "../../db/sql.js";
-import { review } from "../../scheduler/sm2.js";
-import { toDateString, addDays, today } from "../../scheduler/calendar.js";
+import { nextInterval, nextMemory, type Memory } from "../../scheduler/fsrs.js";
+import { GRADE_NUMBERS } from "../../scheduler/replay.js";
+import { calendarDaysBetween, toDateString, addDays, today } from "../../scheduler/calendar.js";
 
 const CreateCard = z.object({
   front: z.string().trim().min(1).max(1000),
@@ -16,7 +17,7 @@ const SubmitReview = z.object({ grade: z.enum(["again", "hard", "good", "easy"])
 
 /**
  * An edit replaces text only. `z.object` strips everything else, so a client
- * sending `ease` or `dueOn` cannot reschedule a card by editing it — the
+ * sending `stability` or `dueOn` cannot reschedule a card by editing it — the
  * scheduler owns those columns and nothing else may write them.
  *
  * Both fields optional, at least one required: a PATCH with an empty body is a
@@ -41,10 +42,16 @@ const EditCard = z
  */
 type CardRow = {
   id: string; front: string; back: string;
-  repetitions: number; intervalDays: number; ease: number; dueOn: string; due: boolean;
+  repetitions: number; intervalDays: number; dueOn: string; due: boolean;
+  /** Null until the card has been reviewed once. Migration 006. */
+  difficulty: number | null; stability: number | null;
 };
 
-export function registerCardRoutes(app: FastifyInstance, pool: Pool): void {
+export function registerCardRoutes(
+  app: FastifyInstance,
+  pool: Pool,
+  now: () => Date = () => new Date(),
+): void {
   app.post<{ Params: { id: string } }>("/decks/:id/cards", async (request, reply) => {
     const userId = currentUser(request);
     const body = parseBody(CreateCard, request.body, reply);
@@ -58,7 +65,8 @@ export function registerCardRoutes(app: FastifyInstance, pool: Pool): void {
       `insert into cards (deck_id, front, back, due_on)
        select id, $2, $3, $5::date from decks where id = $1 and user_id = $4
        returning id, front, back, repetitions, interval_days as "intervalDays",
-                 ease, due_on::text as "dueOn", (due_on <= $5::date) as due`,
+                 difficulty, stability, due_on::text as "dueOn",
+                 (due_on <= $5::date) as due`,
       [request.params.id, body.front, body.back, userId, today()],
     );
 
@@ -73,7 +81,8 @@ export function registerCardRoutes(app: FastifyInstance, pool: Pool): void {
 
     const { rows } = await pool.query<CardRow>(
       `select c.id, c.front, c.back, c.repetitions, c.interval_days as "intervalDays",
-              c.ease, c.due_on::text as "dueOn", (c.due_on <= $2::date) as due
+              c.difficulty, c.stability, c.due_on::text as "dueOn",
+              (c.due_on <= $2::date) as due
          from cards c where c.deck_id = $1 and ${CARD_IS_LIVE} order by c.id`,
       [request.params.id, today()],
     );
@@ -87,7 +96,7 @@ export function registerCardRoutes(app: FastifyInstance, pool: Pool): void {
 
     const { rows } = await pool.query<CardRow>(
       `select c.id, c.front, c.back, c.repetitions, c.interval_days as "intervalDays",
-              c.ease, c.due_on::text as "dueOn"
+              c.difficulty, c.stability, c.due_on::text as "dueOn"
          from cards c join decks d on d.id = c.deck_id
         where d.id = $1 and d.user_id = $2 and c.due_on <= $3::date
           and ${CARD_IS_LIVE}
@@ -107,10 +116,20 @@ export function registerCardRoutes(app: FastifyInstance, pool: Pool): void {
       await client.query("begin");
 
       // `for update` locks the row for the transaction, so two grades submitted
-      // at once cannot both read the old ease and one silently overwrite the
-      // other. Read-modify-write without it is a lost update.
-      const { rows } = await client.query<CardRow>(
-        `select c.id, c.repetitions, c.interval_days as "intervalDays", c.ease
+      // at once cannot both read the old memory state and one silently
+      // overwrite the other. Read-modify-write without it is a lost update.
+      //
+      // `lastReviewedAt` comes from the event log rather than a column on the
+      // card, because it is already there: storing it twice is two places to
+      // disagree. FSRS needs it — SM-2 never asked how long it had been.
+      const { rows } = await client.query<{
+        id: string; repetitions: number;
+        difficulty: number | null; stability: number | null;
+        lastReviewedAt: Date | null;
+      }>(
+        `select c.id, c.repetitions, c.difficulty, c.stability,
+                (select max(r.reviewed_at) from reviews r where r.card_id = c.id)
+                  as "lastReviewedAt"
            from cards c join decks d on d.id = c.deck_id
           where c.id = $1 and d.user_id = $2 and ${CARD_IS_LIVE}
           for update of c`,
@@ -122,27 +141,48 @@ export function registerCardRoutes(app: FastifyInstance, pool: Pool): void {
         return await reply.status(404).send({ error: "No such card" });
       }
 
-      const next = review(
-        { repetitions: card.repetitions, intervalDays: card.intervalDays, ease: card.ease },
-        body.grade,
-      );
-      const dueOn = toDateString(addDays(new Date(), next.intervalDays));
+      const at = now();
+      const memory: Memory | undefined =
+        card.difficulty === null || card.stability === null
+          ? undefined
+          : { difficulty: card.difficulty, stability: card.stability };
+      const elapsedDays =
+        card.lastReviewedAt === null ? 0 : calendarDaysBetween(card.lastReviewedAt, at);
+
+      const next = nextMemory(memory, elapsedDays, GRADE_NUMBERS[body.grade]);
+      const intervalDays = nextInterval(next.stability);
+      const dueOn = toDateString(addDays(at, intervalDays));
+      // Not part of the algorithm — kept because "four in a row" is worth
+      // showing, and because FSRS has no counter a person can read.
+      const repetitions = body.grade === "again" ? 0 : card.repetitions + 1;
 
       // ADR-010: the state and the event, in one transaction. Either both land
-      // or neither does — a card whose ease moved with no record of why is the
-      // failure this prevents.
+      // or neither does — a card whose memory moved with no record of why is
+      // the failure this prevents, and the record is what the replay audit in
+      // tests/http/replay-audit.test.ts checks the state against.
       await client.query(
-        `update cards set repetitions = $2, interval_days = $3, ease = $4, due_on = $5
+        `update cards set repetitions = $2, interval_days = $3, due_on = $4,
+                          difficulty = $5, stability = $6
           where id = $1`,
-        [card.id, next.repetitions, next.intervalDays, next.ease, dueOn],
+        [card.id, repetitions, intervalDays, dueOn, next.difficulty, next.stability],
       );
+      // `reviewed_at` is written explicitly rather than left to the column
+      // default. The elapsed days above were measured against this same clock,
+      // and a row stamped by `now()` on the database server instead would make
+      // the two disagree — which is precisely what the replay audit checks, so
+      // the audit would be measuring the mismatch rather than the write path.
       await client.query(
-        `insert into reviews (card_id, grade, interval_days, ease) values ($1, $2, $3, $4)`,
-        [card.id, body.grade, next.intervalDays, next.ease],
+        `insert into reviews
+           (card_id, grade, interval_days, difficulty, stability, elapsed_days, reviewed_at)
+         values ($1, $2, $3, $4, $5, $6, $7)`,
+        [card.id, body.grade, intervalDays, next.difficulty, next.stability, elapsedDays, at],
       );
 
       await client.query("commit");
-      return await reply.status(201).send({ ...next, dueOn });
+      return await reply.status(201).send({
+        repetitions, intervalDays, dueOn,
+        difficulty: next.difficulty, stability: next.stability,
+      });
     } catch (error) {
       await client.query("rollback");
       throw error;
@@ -175,7 +215,7 @@ export function registerCardRoutes(app: FastifyInstance, pool: Pool): void {
          from decks d
         where d.id = c.deck_id and c.id = $1 and d.user_id = $2 and ${CARD_IS_LIVE}
        returning c.id, c.front, c.back, c.repetitions,
-                 c.interval_days as "intervalDays", c.ease,
+                 c.interval_days as "intervalDays", c.difficulty, c.stability,
                  c.due_on::text as "dueOn", (c.due_on <= $5::date) as due`,
       [request.params.id, userId, body.front ?? null, body.back ?? null, today()],
     );

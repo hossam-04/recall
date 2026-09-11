@@ -44,9 +44,18 @@ declare module "fastify" {
  * here, so a test can build a server that refuses on the third attempt instead
  * of the sixtieth — and so the real numbers live in one place.
  */
+/**
+ * `now` is injected for the same reason the rate limiter's clock is: FSRS
+ * schedules from how long it has actually been since the last review, and a
+ * route that calls `new Date()` directly can only ever be tested at zero
+ * elapsed days — which is one branch of the algorithm and not the interesting
+ * one. Every test that fakes time here would otherwise have to backdate rows
+ * behind the server's back, which breaks the replay audit by construction.
+ */
 export function buildServer(
   pool: Pool,
   limits: { auth: Limit; account: Limit } = LIMITS,
+  now: () => Date = () => new Date(),
 ): FastifyInstance {
   const app = Fastify({ logger: false });
 
@@ -100,7 +109,7 @@ export function buildServer(
       registerUserRoutes(api, pool);
       registerSessionRoutes(api, pool);
       registerDeckRoutes(api, pool);
-      registerCardRoutes(api, pool);
+      registerCardRoutes(api, pool, now);
       registerStatsRoutes(api, pool);
     },
     { prefix: "/api" },

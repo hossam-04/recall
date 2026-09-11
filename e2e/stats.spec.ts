@@ -46,7 +46,7 @@ test("the stats page counts what you actually reviewed", async ({ page }) => {
 
   await page.keyboard.press("Space");
   await page.keyboard.press("3"); // good
-  await expect(page.getByText("Good — next in 1 day")).toBeVisible();
+  await expect(page.getByText("Good — next in 2 days")).toBeVisible();
 
   await page.keyboard.press("Space");
   await page.keyboard.press("3"); // good, clearing the requeued card

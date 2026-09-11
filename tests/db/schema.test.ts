@@ -103,9 +103,24 @@ describe("cards", () => {
       "cards_repetitions_sane",
       testPool().query("update cards set repetitions = -1 where id = $1", [cardId]),
     );
+    // `ease` is gone with SM-2 (migration 006). Its replacements have their own
+    // invariants, and the interesting one is that memory state is all-or-
+    // nothing: half a memory state is a bug, not a partially-migrated card.
     await violates(
-      "cards_ease_positive",
-      testPool().query("update cards set ease = 0 where id = $1", [cardId]),
+      "cards_stability_positive",
+      testPool().query(
+        "update cards set difficulty = 5, stability = 0 where id = $1", [cardId],
+      ),
+    );
+    await violates(
+      "cards_difficulty_range",
+      testPool().query(
+        "update cards set difficulty = 11, stability = 1 where id = $1", [cardId],
+      ),
+    );
+    await violates(
+      "cards_memory_complete",
+      testPool().query("update cards set difficulty = 5 where id = $1", [cardId]),
     );
   });
 
@@ -127,7 +142,8 @@ describe("reviews", () => {
     await violates(
       "reviews_grade_valid",
       testPool().query(
-        "insert into reviews (card_id, grade, interval_days, ease) values ($1, $2, 1, 2.5)",
+        "insert into reviews (card_id, grade, interval_days, difficulty, stability) " +
+          "values ($1, $2, 1, 5, 2.5)",
         [cardId, "mediocre"],
       ),
     );
@@ -136,7 +152,8 @@ describe("reviews", () => {
   test("a reviewed card cannot be deleted, and neither can its owner", async () => {
     const { userId, cardId } = await seedCard();
     await testPool().query(
-      "insert into reviews (card_id, grade, interval_days, ease) values ($1, 'good', 6, 2.5)",
+      "insert into reviews (card_id, grade, interval_days, difficulty, stability) " +
+        "values ($1, 'good', 6, 5, 2.5)",
       [cardId],
     );
 

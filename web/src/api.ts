@@ -85,7 +85,9 @@ export type Card = {
   back: string;
   repetitions: number;
   intervalDays: number;
-  ease: number;
+  /** FSRS memory state. Null until the card has been reviewed once. */
+  difficulty: number | null;
+  stability: number | null;
   dueOn: string;
   due?: boolean;
 };
@@ -97,4 +99,7 @@ export type Stats = {
   grades: Record<Grade, number>;
   daily: { day: string; count: number }[];
 };
-export type GradeResult = { repetitions: number; intervalDays: number; ease: number; dueOn: string };
+export type GradeResult = {
+  repetitions: number; intervalDays: number; dueOn: string;
+  difficulty: number; stability: number;
+};

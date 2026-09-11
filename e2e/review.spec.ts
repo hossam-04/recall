@@ -57,9 +57,11 @@ test("sign up, build a deck, and review it entirely by keyboard", async ({ page 
   await expect(page.getByTestId("back")).toBeVisible();
   await page.keyboard.press("3"); // good
 
-  // First "good" is a one-day interval — the SM-2 constant from M1, surfacing
-  // in a browser for the first time.
-  await expect(page.getByText("Good — next in 1 day")).toBeVisible();
+  // First "good" is a two-day interval: FSRS-6 sets stability to w[2] = 2.3065
+  // days, and at the default 90% requested retention the interval is the
+  // rounded stability. SM-2 said one day, which is what this line asserted
+  // until migration 006 changed the scheduler (ADR-035).
+  await expect(page.getByText("Good — next in 2 days")).toBeVisible();
 
   await page.keyboard.press("Space");
   await page.keyboard.press("3");

@@ -16,7 +16,8 @@
     "start": "tsx --env-file-if-exists=.env src/index.ts",
     "smoke": "./scripts/api-smoke.sh",
     "build:web": "vite build --config web/vite.config.ts",
-    "e2e": "tsx e2e/prepare-db.ts && playwright test"
+    "e2e": "tsx e2e/prepare-db.ts && playwright test",
+    "backfill:fsrs": "tsx --env-file-if-exists=.env scripts/backfill-fsrs.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

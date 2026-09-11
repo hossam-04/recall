@@ -43,6 +43,21 @@ export function today(): string {
 }
 
 /**
+ * Whole calendar days between two instants, counted in the local zone.
+ *
+ * FSRS asks how long it has actually been since the last review, and the honest
+ * unit is days-as-people-count-them, not elapsed hours divided by 24. Reviewing
+ * at 11pm and again at 1am is one day later by the calendar and two hours later
+ * by the clock; the memory model wants the first, and so does every interval
+ * this app has ever produced.
+ */
+export function calendarDaysBetween(from: Date, to: Date): number {
+  const start = Date.parse(`${toDateString(from)}T00:00:00Z`);
+  const end = Date.parse(`${toDateString(to)}T00:00:00Z`);
+  return Math.round((end - start) / 86_400_000);
+}
+
+/**
  * The zone every calendar question in this app is answered in.
  *
  * `toDateString` and `addDays` above work in the Node process's local zone, so

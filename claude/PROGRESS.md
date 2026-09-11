@@ -14,8 +14,8 @@ card edit/delete is the first and is done.
 ```
 $ npm run verify
 tsc --noEmit (both tsconfigs)  → clean
-vitest run                     → 21 files, 133 tests
-./scripts/api-smoke.sh         → 42 assertions, all good
+vitest run                     → 22 files, 136 tests
+./scripts/api-smoke.sh         → 44 assertions, all good
 playwright test                → 9 specs, real Chromium
 $ echo $?
 0                                          (~20 seconds)
@@ -46,13 +46,16 @@ src/http/server.ts          buildServer(pool), error handler, parseBody, routeTa
 src/http/auth.ts            default-deny authentication + CSRF, PUBLIC_ROUTES
 src/http/rate-limit.ts      token bucket, keyed per address and per account
 src/stats/streak.ts         consecutive study days, a pure function
-src/scheduler/fsrs.ts       FSRS-6, hand-written, matched against ts-fsrs
+src/scheduler/fsrs.ts       FSRS-6, hand-written, matched against ts-fsrs — live
+src/scheduler/sm2.ts        retired as the scheduler; still reads old review rows
+src/scheduler/replay.ts     re-derives memory state from a card's review log
+scripts/backfill-fsrs.ts    one-time replay of every existing card
 src/http/cookies.ts         hand-rolled HttpOnly / SameSite / Secure
 src/http/routes/            users, sessions, decks, cards — all under /api
 src/users, src/sessions     argon2 hashing, CSPRNG session + CSRF tokens
 web/src/                    React 19 + react-router, Vite proxies /api
 src/db/sql.ts               CARD_IS_LIVE — shared by two modules, cycle-free
-migrations/001–005          users, sessions, decks, cards, reviews, csrf, deleted_at
+migrations/001–006          users, sessions, decks, cards, reviews, csrf, deleted_at
 scripts/api-smoke.sh        the M2 bar, real socket, real curl
 e2e/review.spec.ts          the M3 bar, real Chromium
 e2e/edit-delete.spec.ts     two-press delete and the first PATCH the UI sends
@@ -66,7 +69,7 @@ sessions, users`.
 
 ## Decisions that shape everything after them
 
-34 ADRs in `claude/DECISIONS.md`. The load-bearing ones:
+35 ADRs in `claude/DECISIONS.md`. The load-bearing ones:
 
 - **ADR-005** due dates are stored, not recomputed — changing a constant must
   not retroactively move cards already scheduled
@@ -155,8 +158,10 @@ order they run in.
    to suggest it; the plan defers the decision to exactly this point.
 5. **FSRS (M6).** Algorithm and differential test **done** — ADR-034. 10,000
    random histories match `ts-fsrs` exactly, and five deliberate breakages each
-   turn it red. **Not yet wired into the app:** that needs a schema decision.
-   Deploy was skipped by choice.
+   turn it red. **Now the live scheduler** — migration 006 and ADR-035. Every
+   existing card got its memory state by replaying its own review log, which
+   is the use ADR-010 was insurance against and nobody predicted. The replay
+   audit ADR-010 promised is finally written. Deploy was skipped by choice.
 6. **A local model via Ollama**, which would make M4 and M5 possible at $0.
    Nothing is installed yet; the machine is 16 GB / 8 cores.
 

@@ -90,10 +90,23 @@ grep -q 'What is a heap' /tmp/smoke-body && pass "due list contains it" || fail 
 
 # shellcheck disable=SC2086
 expect 201 "grade: good"  -X POST "${json[@]}" $CSRF_A -d '{"grade":"good"}'  -b "$JAR_A" "$BASE/api/cards/$CARD/reviews"
-grep -q '"intervalDays":1' /tmp/smoke-body && pass "first good -> 1 day" || fail "wrong interval: $(cat /tmp/smoke-body)"
+# FSRS-6, not SM-2 (ADR-035). The first `good` sets stability to w[2] = 2.3065
+# days, and at the default 90% requested retention the interval is the rounded
+# stability. SM-2's answer here was 1 day.
+grep -q '"intervalDays":2' /tmp/smoke-body && pass "first good -> 2 days" || fail "wrong interval: $(cat /tmp/smoke-body)"
+grep -q '"stability":2.3065' /tmp/smoke-body && pass "and stability is the initial weight" || fail "wrong stability: $(cat /tmp/smoke-body)"
 # shellcheck disable=SC2086
 expect 201 "grade: good again" -X POST "${json[@]}" $CSRF_A -d '{"grade":"good"}' -b "$JAR_A" "$BASE/api/cards/$CARD/reviews"
-grep -q '"intervalDays":6' /tmp/smoke-body && pass "second good -> 6 days" || fail "wrong interval: $(cat /tmp/smoke-body)"
+# Answering the same card twice in one sitting is FSRS's short-term branch —
+# there was no elapsed time, so nothing was forgotten and nothing is proved.
+# The interval holds rather than growing, which is the behaviour SM-2 got
+# wrong: it would have moved this card straight to 6 days.
+grep -q '"intervalDays":2' /tmp/smoke-body && pass "a same-day repeat does not extend the interval" \
+  || fail "same-day repeat moved the interval: $(cat /tmp/smoke-body)"
+
+ELAPSED=$(psql "$DB" -tAc "select string_agg(elapsed_days::text, ',' order by id) from reviews")
+[ "$ELAPSED" = "0,0" ] && pass "and both reviews recorded the elapsed time they saw" \
+  || fail "expected elapsed_days 0,0 — got '$ELAPSED'"
 
 REVIEWS=$(psql "$DB" -tAc "select count(*) from reviews")
 [ "$REVIEWS" = "2" ] && pass "both reviews were recorded as events (ADR-010)" || fail "expected 2 review rows, got $REVIEWS"
@@ -103,7 +116,7 @@ REVIEWS=$(psql "$DB" -tAc "select count(*) from reviews")
 expect 200 "alice edits the card" -X PATCH "${json[@]}" $CSRF_A \
   -d '{"back":"A complete binary tree with the heap property"}' -b "$JAR_A" "$BASE/api/cards/$CARD"
 grep -q 'complete binary tree' /tmp/smoke-body && pass "the edit came back" || fail "edit not returned"
-grep -q '"intervalDays":6' /tmp/smoke-body && pass "editing did not reschedule it" || fail "edit moved the schedule"
+grep -q '"intervalDays":2' /tmp/smoke-body && pass "editing did not reschedule it" || fail "edit moved the schedule"
 
 # shellcheck disable=SC2086
 expect 204 "alice deletes the card" -X DELETE $CSRF_A -b "$JAR_A" "$BASE/api/cards/$CARD"

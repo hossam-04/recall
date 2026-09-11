@@ -1207,3 +1207,68 @@ tracking stability and difficulty separately instead of one `ease` number:
 **What this does not change yet.** Nothing calls it. The scheduler in use is
 still SM-2; wiring FSRS into the app needs a schema decision, which is the next
 question rather than an assumed answer.
+
+## ADR-035 — FSRS replaces SM-2, and the numbers come from replaying the log
+
+**Decision.** Migration 006 adds `difficulty` and `stability` to `cards` and to
+`reviews`, drops `cards.ease`, and makes `reviews.ease` nullable. The grading
+route schedules with FSRS-6. Existing cards get their memory state from
+`npm run backfill:fsrs`, which replays each card's own review history.
+
+**Where the numbers come from, and why nothing else would work.** There is no
+formula converting an SM-2 ease into an FSRS difficulty and stability — the
+information is not in the number. Every other project making this change has to
+either reset every card to new, or invent a heuristic mapping and hope. This one
+does not, because migration 002 recorded every grade and every timestamp. The
+grades and the real gaps between them are facts; the memory state is what those
+facts imply under the new model.
+
+That is the entire argument of ADR-010, cashed. When it was written the
+justification was M5, which is deferred and may never happen. This is the use
+that actually arrived, and it is one nobody predicted.
+
+**One honest qualification.** The *spacing* of those historical reviews was
+chosen by SM-2, not by FSRS, so the replay does not produce the state a card
+would have had under FSRS all along. It produces the state implied by what
+actually happened. FSRS only ever asks what grade you gave and how long it had
+been, and both are true regardless of which algorithm picked the day.
+
+**`cards.ease` is dropped, `reviews.ease` is kept.** Card state was always a
+cache of the log (ADR-010), so dropping the cached column loses nothing — every
+ease the card ever had is still in `reviews`. Rewriting the historical review
+rows, on the other hand, would be falsifying the log: those reviews really did
+happen under SM-2. A check constraint requires each review row to record an
+outcome under one model or the other.
+
+**`src/scheduler/sm2.ts` stays, unlike the CLI in ADR-028.** It is no longer
+called, which by that precedent would make it dead code. The difference is that
+it left something behind to read: the pre-migration `reviews.ease` values are
+only interpretable through it, so it is the specification for part of the event
+log rather than an unused feature.
+
+**`elapsed_days` is stored on each review** even though it is derivable from
+consecutive `reviewed_at` values. Derived at read time it would silently change
+if a row were backdated or deleted, and this column is the input the scheduler
+actually saw — the same argument migration 002 already made for storing each
+review's resulting interval.
+
+**The clock is now injected into `buildServer`.** Not tidiness: FSRS schedules
+from elapsed time, and a route calling `new Date()` directly can only ever be
+tested at zero elapsed days, which is one branch and not the interesting one.
+The first version of the replay audit had exactly this hole — sabotaging the
+route to always pass zero elapsed days left the suite green, because every
+review in the test happened within the same second.
+
+**The audit ADR-010 promised, finally written.** `tests/http/replay-audit.test.ts`
+replays every card's log and asserts the stored state matches. It is not a test
+of FSRS; it is a test that the write path never moves a card's memory without
+recording why. A grading transaction that updates `cards` and skips the insert
+into `reviews` fails here and nowhere else, and so does one that stamps the
+review with a different clock than it measured elapsed time against.
+
+**What changed for a user.** A first `good` now schedules two days out rather
+than one, because FSRS's initial stability for `good` is 2.3065 days and at 90%
+requested retention the interval is the rounded stability. Answering the same
+card twice in one sitting no longer extends the interval at all — there was no
+elapsed time, so nothing was forgotten and nothing was proved. SM-2 would have
+moved that card to six days.

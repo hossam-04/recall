@@ -1,5 +1,15 @@
 /**
- * SM-2 scheduling.
+ * SM-2 scheduling. **Retired as the live scheduler in migration 006** — FSRS-6
+ * in `fsrs.ts` schedules every review now (ADR-035).
+ *
+ * Kept rather than deleted, which is the opposite of what ADR-028 did to the
+ * terminal CLI, and for a reason that does not apply there: `reviews` rows
+ * written before migration 006 carry an `ease` column, and this module is the
+ * definition of what those numbers meant. Delete it and part of the event log
+ * becomes uninterpretable. The CLI, by contrast, left nothing behind to read.
+ *
+ * It is not dead code with a nice excuse: its tests still run, and they are the
+ * specification for those historical rows.
  *
  * Grades are four buttons, not SM-2's original 0-5 scale. Chose four because a
  * six-point self-assessment of your own recall is noise — nobody can reliably

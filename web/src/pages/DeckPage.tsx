@@ -4,6 +4,17 @@ import { api, type Card, type Deck } from "../api.js";
 import { messageOf } from "../App.js";
 import { Dialog } from "../Dialog.js";
 
+/**
+ * Stability in days is what FSRS actually means by "how well you know this":
+ * the interval at which you would have a 90% chance of recalling it. Showing
+ * the raw number is more honest than a made-up percentage, and difficulty is
+ * on its own 1–10 scale so it gets a label rather than a unit.
+ */
+function describeMemory(card: Card): string {
+  if (card.stability === null || card.difficulty === null) return "not reviewed yet";
+  return `holds ~${Math.round(card.stability)} days · difficulty ${card.difficulty.toFixed(1)}/10`;
+}
+
 export function DeckPage() {
   const { id } = useParams();
   const [deck, setDeck] = useState<Deck | undefined>(undefined);
@@ -128,7 +139,10 @@ export function DeckPage() {
             <div className="meta">
               {card.repetitions === 0
                 ? "Not reviewed yet"
-                : `${card.repetitions} in a row · ease ${card.ease.toFixed(2)} · every ${card.intervalDays} day${card.intervalDays === 1 ? "" : "s"}`}
+                // No separate interval: at the default 90% retention the
+                // interval *is* the rounded stability, so printing both was
+                // the same number twice.
+                : `${card.repetitions} in a row · ${describeMemory(card)}`}
               {card.due === true ? "" : ` · next on ${card.dueOn}`}
             </div>
             {/* Inside the <details>, so browsing a deck cannot delete anything

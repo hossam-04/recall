@@ -80,7 +80,7 @@ separately. `claude/PROGRESS.md` lists what is being built in their place.
 | — | Statistics from the review log | `npm run verify` exits 0 | ☑ |
 | 4 | AI generation, both modes, approval queue | `npm run verify` green | deferred |
 | 5 | Evals, cost tracking, degradation | `npm run eval` prints a scored table | ☐ |
-| 6 | *Stretch:* FSRS + differential test vs `ts-fsrs` | 10k histories match | ☐ |
+| 6 | *Stretch:* FSRS + differential test vs `ts-fsrs` | 10k histories match | ☑ |
 
 ## What this does not do
 
