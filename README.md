@@ -21,9 +21,9 @@ Everything below runs against a real Postgres, a real socket, and real Chromium.
 | Layer | What it covers | Size |
 |---|---|---|
 | `tsc --noEmit` | both tsconfigs, strict | — |
-| `vitest run` | unit and integration | 136 tests |
-| `scripts/api-smoke.sh` | a real server driven by curl | 44 assertions |
-| `playwright test` | a real browser, real cookies, real keyboard | 9 specs |
+| `vitest run` | unit and integration | 145 tests |
+| `scripts/api-smoke.sh` | a real server driven by curl | 57 assertions |
+| `playwright test` | a real browser, real cookies, real keyboard | 11 specs |
 
 The whole gate takes about 25 seconds. One non-zero exit is a failure.
 
@@ -31,6 +31,12 @@ Register, sign in, build decks, add cards, review them by keyboard — space
 reveals the answer, 1 to 4 grade it — and read your history back on a statistics
 page. Cards can be edited and deleted, accounts can be closed, and a second user
 gets a 403 on the first user's deck.
+
+A deck can also be exported to a file and imported into another account. The
+file holds the questions and answers and nothing else — how well *you* know a
+card is a measurement of your memory rather than a property of the card, so
+imported cards arrive unreviewed. It is a copy, not a shared deck: the two
+accounts own separate rows from that moment on.
 
 **AI card generation is deferred, not cancelled.** It needs roughly $20 to $40 of
 Anthropic API credits, which a Claude subscription does not cover — API usage is
@@ -89,11 +95,11 @@ src/http/routes/   users, sessions, decks, cards, stats — all under /api
 src/users, src/sessions   argon2 hashing, CSPRNG session and CSRF tokens
 src/stats/         streak, as a pure function
 web/src/           React 19 and react-router; Vite proxies /api to the API
-migrations/        six .sql files, applied in order, each in its own transaction
-tests/, e2e/       roughly 2,900 lines, against real Postgres and real Chromium
+migrations/        seven .sql files, applied in order, each in its own transaction
+tests/, e2e/       roughly 3,200 lines, against real Postgres and real Chromium
 ```
 
-Fifteen routes. Roughly 1,900 lines of server, 900 of UI, 2,900 of tests.
+Seventeen routes. Roughly 2,000 lines of server, 1,100 of UI, 3,200 of tests.
 
 A few decisions that shape everything else:
 
@@ -194,6 +200,6 @@ after you have watched it fail.
 
 ## What this does not do
 
-No deployment, no deck sharing between users, no images or syntax highlighting
+No deployment, no live shared decks, no images or syntax highlighting
 on cards, no file uploads, no mobile layout. Scope cuts and the reasoning behind
 them are in `claude/PROGRESS.md`.

@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router";
 import { api, type Card, type Deck } from "../api.js";
 import { messageOf } from "../App.js";
 import { Dialog } from "../Dialog.js";
+import { downloadDeckFile, type DeckFile } from "../deck-file.js";
 
 /**
  * Stability in days is what FSRS actually means by "how well you know this":
@@ -88,6 +89,20 @@ export function DeckPage() {
     }
   }
 
+  /**
+   * The file carries fronts and backs only. Nothing about how well *you* know
+   * these cards travels with them — see ADR-036 — so the button is safe to
+   * offer next to the destructive ones without a confirmation step.
+   */
+  async function exportDeck() {
+    setError("");
+    try {
+      downloadDeckFile(await api.get<DeckFile>(`/decks/${id}/export`));
+    } catch (caught) {
+      setError(messageOf(caught));
+    }
+  }
+
   const due = cards.filter((card) => card.due === true).length;
 
   if (deck === undefined) {
@@ -109,6 +124,7 @@ export function DeckPage() {
           </p>
         </div>
         <span style={{ display: "flex", gap: ".5rem" }}>
+          <button onClick={() => void exportDeck()}>Export</button>
           <button onClick={() => openDialog("new")}>Add card</button>
           {due > 0 && (
             <Link to={`/decks/${id}/review`}>

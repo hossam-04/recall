@@ -16,9 +16,15 @@ login, cookies, CSRF, authorisation), Postgres schema design and hand-written
 SQL, a React UI, three layers of tests, and an LLM integration done properly —
 structured outputs, token and cost accounting, prompt caching, retries, graceful
 degradation, and an eval suite.
-**Out of scope:** deployment and hosting, deck sharing between users, rich card
-content (images, syntax highlighting), file uploads, mobile layout. Do not
-suggest these.
+**Out of scope:** deployment and hosting, *live* deck sharing between users,
+rich card content (images, syntax highlighting), server-side file uploads,
+mobile layout. Do not suggest these.
+
+Decks can be exported to a file and imported into another account (ADR-036).
+That is a copy, not a share: the recipient gets their own rows, and
+`decks.user_id` is still the whole authorisation model. Two accounts studying
+one deck and seeing each other's progress remains out of scope, and would need
+the card table split into content and per-user state first.
 
 **The FSRS scheduler is a stretch milestone (M6), not part of the plan.** M1
 ships SM-2. See ADR-003 for what that cut costs.

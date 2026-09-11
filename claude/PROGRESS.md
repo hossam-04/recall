@@ -7,16 +7,18 @@ alone does not carry.
 
 ## Current state
 
-**M0–M3 done. M4 is deferred — it needs API credits that do not exist.** The
-work in progress is a list of free additions chosen in their place, of which
-card edit/delete is the first and is done.
+**M0–M3 done, and M6 with them. M4 is deferred — it needs API credits that do
+not exist.** The work since has been a list of free additions chosen in their
+place. Deck export and import (ADR-036) is the most recent, and was not on that
+list: it was asked for directly, against a scope cut, and taken in the one shape
+that does not touch the authorisation model.
 
 ```
 $ npm run verify
 tsc --noEmit (both tsconfigs)  → clean
-vitest run                     → 22 files, 136 tests
-./scripts/api-smoke.sh         → 44 assertions, all good
-playwright test                → 9 specs, real Chromium
+vitest run                     → 23 files, 145 tests
+./scripts/api-smoke.sh         → 57 assertions, all good
+playwright test                → 11 specs, real Chromium
 $ echo $?
 0                                          (~20 seconds)
 ```
@@ -86,7 +88,7 @@ sessions, users`.
 ## What breaking things has taught us
 
 Sabotage — deliberately breaking code to see whether a test notices — has found
-**eight tests that passed while measuring something other than their name.**
+**nine tests that passed while measuring something other than their name.**
 
 | Test | Passed even when… | Why it could not see |
 |---|---|---|
@@ -98,6 +100,7 @@ Sabotage — deliberately breaking code to see whether a test notices — has fo
 | stats timezone | `date(reviewed_at)` replaced the explicit zone | the test database and the process shared a zone, so the two answers were identical |
 | rate limit, per account | the per-email limit was deleted outright | both limits were set to three, and `inject` presents one address, so the per-IP counter always ran out first |
 | replay audit | the route always passed zero elapsed days | every review in the test happened within the same second |
+| import, wrong format | the format check was deleted outright | the fixture had no `cards` array either, so the array check rejected it anyway |
 
 Each was rewritten and re-verified against the same sabotage. **A passing test
 is evidence only after you have watched it fail.**
@@ -138,6 +141,39 @@ passed:
   `png-from-scratch` signature (3 days of work, then 35 idle). Still the largest
   risk to the plan; nothing about being ahead of schedule changes it.
 
+## Session log — 2026-09-11, deck export and import
+
+Asked for "a deck share option". Deck sharing is out of scope in `CLAUDE.md` and
+is cut #2 on the pre-committed list, so the conflict was surfaced before any
+code. The reading chosen was export/import, which is the one shape of sharing
+that leaves `decks.user_id` as the entire authorisation model — nothing is
+shared, so no route can forget a membership check that does not exist. Live
+shared decks stay out of scope and would need the card table split into content
+and per-user state first. ADR-036.
+
+Shipped: migration 007 (`source = 'imported'`), `GET /api/decks/:id/export`,
+`POST /api/decks/import`, `src/http/card-fields.ts`, an export button, an import
+dialog that reads the file in the browser, 9 integration tests, 13 smoke
+assertions, 2 browser specs.
+
+Three things went wrong and all three are worth keeping:
+
+- **A test passed for the wrong reason, found by sabotage.** Deleting the format
+  check left "rejects a file that is not ours" green, because the fixture also
+  had no `cards` array. Both fixtures are now valid but for the format string.
+  This is the third time the *fixture* could not reach the state the assertion
+  was about.
+- **`npm test` was green on a file `tsc` rejects.** Nine passing tests, one
+  helper typed `payload: unknown`, and vitest never typechecks. Twice now.
+- **A browser spec was flaky in the full run and green alone.** Waiting for a
+  card front is not a synchronisation point, because the graded card's front
+  stays on screen until the request lands.
+
+Also worth remembering: `npm run migrate` reported nothing pending on a
+migration that had just been written. Not a bug. A dev server left running under
+`tsx watch` restarted on the new file and migrated on boot before the explicit
+run got there.
+
 ## Known gaps, recorded not fixed
 
 - ~~Account deletion is impossible.~~ **Fixed** — ADR-030. The restrict stays;
@@ -175,7 +211,7 @@ order they run in.
    state. ADR-010 justified storing both by claiming this test would exist. It
    did not. Small, free, and it catches a grading path that updates state
    without recording the event.
-4. **Deploy.** In tension with `CLAUDE.md`'s out-of-scope list, which says not
+4. **Deploy.** *Skipped by choice.* In tension with `CLAUDE.md`'s out-of-scope list, which says not
    to suggest it; the plan defers the decision to exactly this point.
 5. **FSRS (M6).** Algorithm and differential test **done** — ADR-034. 10,000
    random histories match `ts-fsrs` exactly, and five deliberate breakages each

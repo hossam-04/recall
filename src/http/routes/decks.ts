@@ -5,6 +5,7 @@ import { currentUser } from "../auth.js";
 import { CARD_IS_LIVE } from "../../db/sql.js";
 import { today } from "../../scheduler/calendar.js";
 import { parseBody } from "../server.js";
+import { CARD_FRONT, CARD_BACK } from "../card-fields.js";
 
 /**
  * No `user_id` field. Ownership comes from the session, never from the body —
@@ -81,6 +82,40 @@ export async function requireOwnedDeck(
   return visible;
 }
 
+
+/**
+ * The wire format for an exported deck.
+ *
+ * Versioned by a literal string rather than a number: a bare `"version": 1`
+ * matches half the JSON files in the world, so a file from some other program
+ * could parse as ours and import as nonsense. This string identifies the
+ * producer and the version at once, and a v2 reader can refuse v1 loudly.
+ */
+export const DECK_FORMAT = "recall.deck.v1";
+
+/**
+ * An import is the only request in this app whose body was written by someone
+ * else — that is the entire point of the feature, and it is why every field is
+ * bounded rather than merely typed.
+ *
+ * `format` is checked first so a file from some other flashcard program fails
+ * with "not a recall deck" instead of a list of missing fields.
+ *
+ * The cap is on the array, not just on each element: a thousand valid cards is
+ * still a request that holds a transaction open and writes a thousand rows, and
+ * Fastify's 1 MB body limit is a blunter instrument than a count the error
+ * message can explain.
+ */
+const MAX_IMPORT_CARDS = 1000;
+
+const ImportDeck = z.object({
+  format: z.literal(DECK_FORMAT, { message: `Not a ${DECK_FORMAT} file` }),
+  name: z.string().trim().min(1).max(100),
+  cards: z.array(z.object({ front: CARD_FRONT, back: CARD_BACK }))
+    .min(1, { message: "A deck file with no cards imports nothing" })
+    .max(MAX_IMPORT_CARDS),
+});
+
 const UNIQUE_VIOLATION = "23505";
 
 export function registerDeckRoutes(app: FastifyInstance, pool: Pool): void {
@@ -106,6 +141,62 @@ export function registerDeckRoutes(app: FastifyInstance, pool: Pool): void {
     }
   });
 
+  /**
+   * Registered before `/decks/:id/...` reads as a concern, but is not one — no
+   * other POST sits at this position, so nothing is shadowed.
+   *
+   * There is deliberately no `source` in the accepted body. The file can claim
+   * its cards were AI-generated; nothing here can check that, and believing it
+   * would put cards this user never generated into the population M5 compares.
+   * The server writes 'imported' and the claim is discarded. Migration 007.
+   */
+  app.post("/decks/import", async (request, reply) => {
+    const userId = currentUser(request);
+
+    const body = parseBody(ImportDeck, request.body, reply);
+    if (body === undefined) return;
+
+    // One transaction: a failure partway through must not leave a named deck
+    // with half its cards, which looks like a successful import until you count.
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+
+      const { rows } = await client.query<{ id: string; name: string; createdAt: Date }>(
+        `insert into decks (user_id, name) values ($1, $2)
+         returning id, name, created_at as "createdAt"`,
+        [userId, body.name],
+      );
+      const deck = rows[0];
+      if (deck === undefined) throw new Error("insert into decks returned no row");
+
+      // One statement, not one per card. unnest turns two parallel arrays into
+      // rows, so a 500-card import is a single round trip rather than 500.
+      await client.query(
+        `insert into cards (deck_id, front, back, source, due_on)
+         select $1, front, back, 'imported', $4::date
+           from unnest($2::text[], $3::text[]) as t(front, back)`,
+        [deck.id, body.cards.map((c) => c.front), body.cards.map((c) => c.back), today()],
+      );
+
+      await client.query("commit");
+
+      // Every imported card is due immediately, exactly as a hand-created one
+      // is — so both counts are the card count, and no follow-up read is needed.
+      return await reply.status(201).send({
+        ...deck, cardCount: body.cards.length, dueCount: body.cards.length,
+      });
+    } catch (error) {
+      await client.query("rollback");
+      if (error instanceof Error && "code" in error && error.code === UNIQUE_VIOLATION) {
+        return await reply.status(409).send({ error: "You already have a deck with that name" });
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  });
+
   app.get("/decks", async (request, reply) => {
     const userId = currentUser(request);
 
@@ -118,5 +209,28 @@ export function registerDeckRoutes(app: FastifyInstance, pool: Pool): void {
     const deck = await requireOwnedDeck(pool, request.params.id, currentUser(request), reply);
     if (deck === undefined) return;
     return deck;
+  });
+
+  app.get<{ Params: { id: string } }>("/decks/:id/export", async (request, reply) => {
+    const deck = await requireOwnedDeck(pool, request.params.id, currentUser(request), reply);
+    if (deck === undefined) return;
+
+    // front and back only. Every other column on a card row is scheduler state,
+    // and stability describes the owner's memory rather than the card — handing
+    // it to someone else would schedule them against recall they never had.
+    //
+    // Soft-deleted cards are excluded. Deleting a card is a statement that you
+    // do not want it; an export is not the place to resurrect it.
+    const { rows } = await pool.query<{ front: string; back: string }>(
+      `select c.front, c.back
+         from cards c
+        where c.deck_id = $1 and ${CARD_IS_LIVE}
+        order by c.id`,
+      [deck.id],
+    );
+
+    // Plain JSON, no Content-Disposition: the browser turns this into a file,
+    // which keeps every route in this API answering the same way.
+    return { format: DECK_FORMAT, name: deck.name, cards: rows };
   });
 }

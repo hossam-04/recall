@@ -3,10 +3,18 @@ import { Link } from "react-router";
 import { ApiError, api, type Deck } from "../api.js";
 import { messageOf } from "../App.js";
 import { Dialog } from "../Dialog.js";
+import { parseDeckFile, type DeckFile } from "../deck-file.js";
 
 export function DecksPage() {
   const [decks, setDecks] = useState<Deck[] | undefined>(undefined);
   const [adding, setAdding] = useState(false);
+  const [importing, setImporting] = useState(false);
+  // The parsed file, held until the name is confirmed. Undefined means nothing
+  // has been chosen yet, which is what disables the submit button.
+  const [chosen, setChosen] = useState<DeckFile | undefined>(undefined);
+  // Shared by both dialogs deliberately: they never open together, and an
+  // imported deck's name is edited with exactly the same control and the same
+  // 409 as one typed by hand.
   const [name, setName] = useState("");
   const [error, setError] = useState("");
 
@@ -14,22 +22,64 @@ export function DecksPage() {
     api.get<Deck[]>("/decks").then(setDecks).catch((caught: unknown) => setError(messageOf(caught)));
   }, []);
 
+  function accept(deck: Deck) {
+    setDecks([...(decks ?? []), deck].sort((a, b) => a.name.localeCompare(b.name)));
+    setName("");
+    setChosen(undefined);
+    setAdding(false);
+    setImporting(false);
+  }
+
+  // 409 is the unique constraint on (user_id, name). Named as itself: the user
+  // can fix a duplicate, and knowing which problem it is is the point. Both
+  // routes raise the same conflict, so both report it the same way.
+  function report(caught: unknown) {
+    setError(
+      caught instanceof ApiError && caught.status === 409
+        ? `You already have a deck called "${name}".`
+        : messageOf(caught),
+    );
+  }
+
   async function create(event: React.FormEvent) {
     event.preventDefault();
     setError("");
     try {
-      const deck = await api.post<Deck>("/decks", { name });
-      setDecks([...(decks ?? []), deck].sort((a, b) => a.name.localeCompare(b.name)));
-      setName("");
-      setAdding(false);
+      accept(await api.post<Deck>("/decks", { name }));
     } catch (caught) {
-      // 409 is the unique constraint on (user_id, name). Named as itself: the
-      // user can fix a duplicate, and knowing which problem it is is the point.
-      setError(
-        caught instanceof ApiError && caught.status === 409
-          ? `You already have a deck called "${name}".`
-          : messageOf(caught),
-      );
+      report(caught);
+    }
+  }
+
+  /**
+   * The file is read here, in the browser. Nothing is uploaded — the server is
+   * sent the same JSON body every other route takes, so there is no multipart
+   * parsing and no temporary file on the server at all.
+   */
+  async function chooseFile(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (file === undefined) return;
+    setError("");
+    try {
+      const parsed = parseDeckFile(await file.text());
+      setChosen(parsed);
+      // Pre-filled, not forced. The name is the one field of a deck file worth
+      // editing before it lands, and it is the only one that can conflict.
+      setName(parsed.name);
+    } catch (caught) {
+      setChosen(undefined);
+      setError(messageOf(caught));
+    }
+  }
+
+  async function importDeck(event: React.FormEvent) {
+    event.preventDefault();
+    if (chosen === undefined) return;
+    setError("");
+    try {
+      accept(await api.post<Deck>("/decks/import", { ...chosen, name }));
+    } catch (caught) {
+      report(caught);
     }
   }
 
@@ -48,9 +98,14 @@ export function DecksPage() {
                 : "Nothing due today"}
           </p>
         </div>
-        <button className="primary" onClick={() => { setAdding(true); setError(""); }}>
-          New deck
-        </button>
+        <span style={{ display: "flex", gap: ".5rem" }}>
+          <button onClick={() => { setImporting(true); setChosen(undefined); setName(""); setError(""); }}>
+            Import
+          </button>
+          <button className="primary" onClick={() => { setAdding(true); setName(""); setError(""); }}>
+            New deck
+          </button>
+        </span>
       </div>
 
       {decks?.length === 0 && (
@@ -78,7 +133,7 @@ export function DecksPage() {
         ))}
       </div>
 
-      {error !== "" && !adding && <p className="error" role="alert">{error}</p>}
+      {error !== "" && !adding && !importing && <p className="error" role="alert">{error}</p>}
 
       <Dialog open={adding} title="New deck" onClose={() => setAdding(false)}>
         <form onSubmit={(event) => void create(event)}>
@@ -91,6 +146,42 @@ export function DecksPage() {
           <div className="dialog-actions">
             <button type="button" onClick={() => setAdding(false)}>Cancel</button>
             <button type="submit" className="primary">Create deck</button>
+          </div>
+        </form>
+      </Dialog>
+
+      <Dialog
+        open={importing}
+        title="Import a deck"
+        onClose={() => { setImporting(false); setChosen(undefined); }}
+      >
+        <form onSubmit={(event) => void importDeck(event)}>
+          <label>
+            <span>Deck file</span>
+            <input type="file" name="file" accept="application/json,.json" required
+                   onChange={(event) => void chooseFile(event)} />
+          </label>
+          {chosen !== undefined && (
+            <>
+              <p className="muted">
+                {chosen.cards.length} card{chosen.cards.length === 1 ? "" : "s"}. They arrive
+                unreviewed — the file carries no scheduling history.
+              </p>
+              <label>
+                <span>Name</span>
+                <input name="name" value={name} required
+                       onChange={(event) => setName(event.target.value)} />
+              </label>
+            </>
+          )}
+          {error !== "" && <p className="error" role="alert">{error}</p>}
+          <div className="dialog-actions">
+            <button type="button" onClick={() => { setImporting(false); setChosen(undefined); }}>
+              Cancel
+            </button>
+            <button type="submit" className="primary" disabled={chosen === undefined}>
+              Import deck
+            </button>
           </div>
         </form>
       </Dialog>

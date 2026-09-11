@@ -3,16 +3,14 @@ import type { Pool } from "pg";
 import { z } from "zod";
 import { currentUser } from "../auth.js";
 import { parseBody } from "../server.js";
+import { CARD_FRONT, CARD_BACK } from "../card-fields.js";
 import { requireOwnedDeck } from "./decks.js";
 import { CARD_IS_LIVE } from "../../db/sql.js";
 import { nextInterval, nextMemory, type Memory } from "../../scheduler/fsrs.js";
 import { GRADE_NUMBERS } from "../../scheduler/replay.js";
 import { calendarDaysBetween, toDateString, addDays, today } from "../../scheduler/calendar.js";
 
-const CreateCard = z.object({
-  front: z.string().trim().min(1).max(1000),
-  back: z.string().trim().min(1).max(4000),
-});
+const CreateCard = z.object({ front: CARD_FRONT, back: CARD_BACK });
 const SubmitReview = z.object({ grade: z.enum(["again", "hard", "good", "easy"]) });
 
 /**
@@ -25,8 +23,8 @@ const SubmitReview = z.object({ grade: z.enum(["again", "hard", "good", "easy"])
  */
 const EditCard = z
   .object({
-    front: z.string().trim().min(1).max(1000).optional(),
-    back: z.string().trim().min(1).max(4000).optional(),
+    front: CARD_FRONT.optional(),
+    back: CARD_BACK.optional(),
   })
   .refine((b) => b.front !== undefined || b.back !== undefined, {
     message: "Provide front, back, or both",

@@ -135,6 +135,52 @@ expect 403 "bob is refused alice's deck" -b "$JAR_B" "$BASE/api/decks/$DECK"
 expect 200 "bob's own deck list is empty" -b "$JAR_B" "$BASE/api/decks"
 [ "$(cat /tmp/smoke-body)" = "[]" ] && pass "and it really is empty" || fail "bob sees $(cat /tmp/smoke-body)"
 
+# --- export and import (ADR-036) ---------------------------------------------
+# Over the wire on purpose: the file is produced by one account and consumed by
+# another, and -d @file is the closest curl gets to what the browser does with
+# a blob it just downloaded.
+
+# shellcheck disable=SC2086
+expect 201 "alice adds a second card" -X POST "${json[@]}" $CSRF_A \
+  -d '{"front":"What is a trie?","back":"A prefix tree"}' -b "$JAR_A" "$BASE/api/decks/$DECK/cards"
+
+expect 200 "alice exports the deck" -b "$JAR_A" "$BASE/api/decks/$DECK/export"
+cp /tmp/smoke-body /tmp/smoke-deck.json
+grep -q '"format":"recall.deck.v1"' /tmp/smoke-deck.json && pass "the file is stamped with the format" \
+  || fail "no format stamp: $(cat /tmp/smoke-deck.json)"
+grep -q 'What is a trie' /tmp/smoke-deck.json && pass "and carries the live card" || fail "live card missing"
+# The deleted card and every scheduler column must be absent. Alice has graded
+# in this run, so both are states the export could actually leak.
+grep -q 'What is a heap' /tmp/smoke-deck.json && fail "the export resurrected a deleted card" \
+  || pass "the deleted card is not in it"
+grep -qE 'stability|difficulty|dueOn|repetitions' /tmp/smoke-deck.json \
+  && fail "the export leaked scheduler state: $(cat /tmp/smoke-deck.json)" \
+  || pass "and no trace of how well alice knows it"
+
+CSRF_B="-H x-csrf-token:$(csrf "$JAR_B")"
+# Bob owns no decks, so "Algorithms" is free for him — the same name under a
+# different owner is fine, which is what the unique constraint is scoped to.
+# shellcheck disable=SC2086
+expect 201 "bob imports the file unchanged" -X POST "${json[@]}" $CSRF_B \
+  -d @/tmp/smoke-deck.json -b "$JAR_B" "$BASE/api/decks/import"
+BOBS_DECK=$(sed -n 's/.*"id":"\([0-9]*\)".*/\1/p' /tmp/smoke-body)
+grep -q '"cardCount":1' /tmp/smoke-body && pass "with the card count it reported" || fail "wrong count: $(cat /tmp/smoke-body)"
+
+SRC=$(psql "$DB" -tAc "select distinct source from cards where deck_id = $BOBS_DECK")
+[ "$SRC" = "imported" ] && pass "the cards are recorded as imported (migration 007)" \
+  || fail "expected source 'imported', got '$SRC'"
+FRESH=$(psql "$DB" -tAc "select count(*) from cards where deck_id = $BOBS_DECK and (stability is not null or repetitions <> 0)")
+[ "$FRESH" = "0" ] && pass "and arrive unreviewed, whatever alice's history was" \
+  || fail "$FRESH imported cards carried scheduler state"
+
+# shellcheck disable=SC2086
+expect 409 "importing it twice conflicts on the name" -X POST "${json[@]}" $CSRF_B \
+  -d @/tmp/smoke-deck.json -b "$JAR_B" "$BASE/api/decks/import"
+ORPHANS=$(psql "$DB" -tAc "select count(*) from cards where deck_id not in (select id from decks)")
+[ "$ORPHANS" = "0" ] && pass "and the failed import rolled back cleanly" || fail "$ORPHANS orphan cards"
+
+expect 403 "bob cannot export alice's deck" -b "$JAR_B" "$BASE/api/decks/$DECK/export"
+
 expect 204 "alice logs out" -X DELETE -b "$JAR_A" "$BASE/api/sessions"
 expect 401 "her cookie stops working" -b "$JAR_A" "$BASE/api/decks"
 

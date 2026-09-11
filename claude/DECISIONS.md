@@ -1279,3 +1279,95 @@ requested retention the interval is the rounded stability. Answering the same
 card twice in one sitting no longer extends the interval at all — there was no
 elapsed time, so nothing was forgotten and nothing was proved. SM-2 would have
 moved that card to six days.
+
+---
+
+## ADR-036 — Decks are shared by file, not by account
+
+**Decision:** a deck can be exported to a JSON file and imported into another
+account. The file carries `front` and `back` and nothing else. `GET
+/api/decks/:id/export` produces it, `POST /api/decks/import` consumes it, and
+the server writes `source = 'imported'` on every card it creates
+(migration 007).
+
+*Alternatives:* a read-only share link; a genuinely shared deck both accounts
+review; preserving scheduler state in the file; trusting the file's `source`.
+
+**Why this and not a shared deck.** `CLAUDE.md` and the plan both list deck
+sharing as out of scope, and cut #2 on the pre-committed list. That cut was
+aimed at *shared state*, and it was right: the entire authorisation model is
+`decks.user_id` compared against the session, funnelled through one helper
+precisely because three routes once answered "not yours" three different ways
+(ADR-023). A shared deck replaces that equality with a membership test, and
+every route added afterwards has to remember to use it.
+
+Copying sidesteps all of it. After an import the recipient owns ordinary rows
+in their own account; `requireOwnedDeck` is unchanged, and no route can forget a
+predicate that does not exist. The deck the original owner keeps and the copy
+are unrelated from that moment on — deleting one does nothing to the other,
+which is the honest description of what a copy is.
+
+**Why the file carries no scheduler state.** `stability` is the interval at
+which *you* have a 90% chance of recall. It is a measurement of one person's
+memory, not a property of the card. Importing it would start the recipient on a
+forgetting curve they never had, and FSRS would schedule confidently against
+a history that is not theirs. Imported cards arrive unreviewed and due, which
+is the truth. Soft-deleted cards are excluded for the matching reason: deleting
+a card says you do not want it, and an export is not a resurrection.
+
+**Why `source` is assigned, not accepted.** `source` exists so M5 can ask
+whether generated cards are retained worse than hand-written ones. A file can
+claim its cards were generated; nothing here can check that. Believing it would
+drop cards this user never generated into one side of the only comparison in
+this project capable of returning a result I would not like. The third value
+keeps imported cards outside both populations rather than silently joining one.
+
+**Why a 409 rather than an automatic rename.** The unique constraint is
+`(user_id, name)`, so a collision is only ever with a deck you already own. The
+import dialog pre-fills the name from the file and lets you edit it, so the
+conflict surfaces on exactly the control that fixes it, and reuses the message
+`POST /decks` already returns. An auto-suffix would rename your deck without
+saying so and add a second code path that the create route does not have.
+
+**The import is the only request body in this app written by a stranger.** That
+is the point of the feature, and it is why every field is bounded rather than
+merely typed: text lengths come from the same schema the card route uses, the
+array is capped at 1000, and the format string is checked first so the wrong
+file says "not a recall deck" instead of listing missing fields.
+
+Those shared length schemas forced `src/http/card-fields.ts` into existence.
+`cards.ts` already imports from `decks.ts`, so putting them in either module
+closes an ES module cycle — the same one that produced `Cannot access
+'CARD_IS_LIVE' before initialization` in ADR-029. A leaf module both sides
+import cannot. Keeping one definition is not tidiness: an import validating
+more loosely than the card route would be a side door for storing cards the
+product says are invalid.
+
+**Nothing is uploaded.** The browser reads the chosen file with `File.text()`
+and posts JSON. There is no multipart handling and no file anywhere near the
+server, which keeps this on the right side of the file-upload scope cut.
+
+*Would revisit if:* two people ever want to study the same deck and see each
+other's progress. That is the feature this one deliberately is not, and it needs
+the card table split into content and per-user state before anything else.
+
+### What the tests caught
+
+**A sabotage found a test passing for the wrong reason.** The fixture for "a
+file that is not ours is rejected" was `{ deck: "something else" }` — no cards
+array, so deleting the format check entirely still rejected it on the array
+check. The assertion had never exercised the thing it was named after. Both the
+HTTP and browser fixtures are now valid in every respect except the format
+string. Third time this shape has appeared: the fixture could not reach the
+state the assertion was about.
+
+**`npm test` was green on a file that does not compile.** Nine passing tests,
+and `tsc` rejected the file — a helper typed `payload: unknown` selects
+`inject`'s chainable overload, whose result has no `statusCode`. vitest does not
+typecheck, which is now twice this has hidden a real type error.
+
+**The browser spec was flaky in the full run and green alone.** Waiting for the
+card front before pressing a key is not enough: the graded card's front stays on
+screen until the request lands, so the wait passes instantly and the next key
+arrives mid-transition, where the handler reads it as a grade key and drops it.
+Each iteration now pins the queue count and asserts nothing is revealed.
