@@ -1,9 +1,10 @@
 # recall
 
-A spaced-repetition system for interview prep, written end to end in TypeScript:
-Postgres with hand-written SQL, a Fastify API with session auth, a React UI, and
-a memory model checked against an independent implementation of the same
-algorithm.
+A spaced-repetition system for studying anything you need to remember — a
+language, a syllabus, a field you are new to, an interview you are preparing
+for. Written end to end in TypeScript: Postgres with hand-written SQL, a Fastify
+API with session auth, a React UI, and a memory model checked against an
+independent implementation of the same algorithm.
 
 It is a learning project. The product is real and works, but the point is the
 assembly — and the record of why each piece is the way it is.

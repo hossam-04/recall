@@ -11,6 +11,13 @@ Newest last. Each entry should be readable a month later without the code open.
 **Decision:** A spaced-repetition interview-prep system, TypeScript on the server
 and in the browser, Postgres for storage, running on localhost.
 
+> **Amended 2026-09-11.** The subject matter was never load-bearing. Nothing
+> built since is specific to interview questions — a card is a front, a back and
+> a memory state — so the product is described as a study tool, with interview
+> prep as one use rather than the purpose. The rest of this record stands: the
+> alternatives below were weighed against the same criteria, and none of them
+> turned on what the cards were about.
+
 *Alternatives considered, with the gate that killed each:*
 
 | Candidate | Killed by |
