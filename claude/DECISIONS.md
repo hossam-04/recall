@@ -1156,3 +1156,54 @@ stepping backwards through local midnight.
 
 **Yesterday counts toward the streak.** A streak that broke at midnight would
 report zero for most of every morning, before you had any chance to study.
+
+## ADR-034 — FSRS-6 is hand-written; `ts-fsrs` is the oracle, not the implementation
+
+**Decision.** `src/scheduler/fsrs.ts` implements FSRS-6 from the published
+formulas. `ts-fsrs` 5.4.2 is a **devDependency** and appears only in
+`tests/scheduler/fsrs-differential.test.ts`, where ten thousand random review
+histories run through both and must produce identical numbers.
+
+**Why this is the most valuable thing in the project.** Every other correctness
+authority here was written by me — my Zod schemas, my Postgres constraints, my
+tests, my eval harness. ADR-003 said so plainly when it cut FSRS to a stretch
+goal: choosing this project meant accepting a weaker oracle than `pngcheck` or
+`redis-cli`. This buys that back. `ts-fsrs` was written by someone else against
+the same specification, so agreeing with it is evidence that is not circular.
+
+**What the oracle does not cover,** stated because it is easy to overclaim: it
+shows that this implementation of FSRS-6 matches another implementation of
+FSRS-6. It says nothing about whether FSRS-6 models human memory well. That is a
+claim about the world and no test in this repository can reach it.
+
+**Making it fail on purpose.** Five deliberate breakages, each reverted: dropping
+the hard-grade penalty, dropping the same-day branch, mean-reverting toward
+`good` instead of `easy`, removing the linear damping on difficulty, and
+rounding the forgetting curve to six decimals instead of eight. All five turned
+the suite red. The last one matters most — it is the one that proves the
+agreement is exact rather than approximate.
+
+**On the rounding.** The reference rounds to eight decimals at specific points,
+and this implementation copies those points exactly. That is not superstition:
+two implementations of the same formula in floating point diverge within a few
+reviews, so *where* the rounding happens is part of the specification whenever
+results are meant to be reproducible across implementations. A tolerance-based
+comparison would have hidden a whole class of real porting mistakes.
+
+**What FSRS can express that SM-2 cannot.** Three things, all consequences of
+tracking stability and difficulty separately instead of one `ease` number:
+
+- **Elapsed time is an input.** SM-2 treats every review as on time. FSRS asks
+  how long it has actually been, and recalling a card you were about to forget
+  raises stability far more than recalling one you saw yesterday. That is where
+  ADR-010's event log stops being insurance and becomes the feature.
+- **Retention is a knob.** `nextInterval(stability, requestRetention)` solves
+  the forgetting curve for whatever recall probability you are willing to
+  accept. SM-2's intervals are whatever its multipliers produce.
+- **A lapse is not a reset.** SM-2 sets `repetitions` to zero and starts over.
+  FSRS computes a post-lapse stability from what you knew, so a year-old memory
+  that just failed is still stronger than a new card.
+
+**What this does not change yet.** Nothing calls it. The scheduler in use is
+still SM-2; wiring FSRS into the app needs a schema decision, which is the next
+question rather than an assumed answer.

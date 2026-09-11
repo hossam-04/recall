@@ -14,7 +14,7 @@ card edit/delete is the first and is done.
 ```
 $ npm run verify
 tsc --noEmit (both tsconfigs)  → clean
-vitest run                     → 19 files, 122 tests
+vitest run                     → 21 files, 133 tests
 ./scripts/api-smoke.sh         → 42 assertions, all good
 playwright test                → 9 specs, real Chromium
 $ echo $?
@@ -46,6 +46,7 @@ src/http/server.ts          buildServer(pool), error handler, parseBody, routeTa
 src/http/auth.ts            default-deny authentication + CSRF, PUBLIC_ROUTES
 src/http/rate-limit.ts      token bucket, keyed per address and per account
 src/stats/streak.ts         consecutive study days, a pure function
+src/scheduler/fsrs.ts       FSRS-6, hand-written, matched against ts-fsrs
 src/http/cookies.ts         hand-rolled HttpOnly / SameSite / Secure
 src/http/routes/            users, sessions, decks, cards — all under /api
 src/users, src/sessions     argon2 hashing, CSPRNG session + CSRF tokens
@@ -65,7 +66,7 @@ sessions, users`.
 
 ## Decisions that shape everything after them
 
-33 ADRs in `claude/DECISIONS.md`. The load-bearing ones:
+34 ADRs in `claude/DECISIONS.md`. The load-bearing ones:
 
 - **ADR-005** due dates are stored, not recomputed — changing a constant must
   not retroactively move cards already scheduled
@@ -152,9 +153,10 @@ order they run in.
    without recording the event.
 4. **Deploy.** In tension with `CLAUDE.md`'s out-of-scope list, which says not
    to suggest it; the plan defers the decision to exactly this point.
-5. **FSRS (M6).** Differential test against `ts-fsrs` — the strongest external
-   oracle available to this project, and the one thing that would raise the
-   correctness bar rather than widen the feature set.
+5. **FSRS (M6).** Algorithm and differential test **done** — ADR-034. 10,000
+   random histories match `ts-fsrs` exactly, and five deliberate breakages each
+   turn it red. **Not yet wired into the app:** that needs a schema decision.
+   Deploy was skipped by choice.
 6. **A local model via Ollama**, which would make M4 and M5 possible at $0.
    Nothing is installed yet; the machine is 16 GB / 8 cores.
 
