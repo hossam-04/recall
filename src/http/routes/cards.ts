@@ -5,7 +5,7 @@ import { currentUser } from "../auth.js";
 import { parseBody } from "../server.js";
 import { CARD_FRONT, CARD_BACK } from "../card-fields.js";
 import { requireOwnedDeck } from "./decks.js";
-import { CARD_IS_LIVE } from "../../db/sql.js";
+import { CARD_IS_LIVE, DECK_IS_LIVE } from "../../db/sql.js";
 import { nextInterval, nextMemory, type Memory } from "../../scheduler/fsrs.js";
 import { GRADE_NUMBERS } from "../../scheduler/replay.js";
 import { calendarDaysBetween, toDateString, addDays, today } from "../../scheduler/calendar.js";
@@ -61,7 +61,8 @@ export function registerCardRoutes(
     // in the statement rather than in a check someone can forget to write.
     const { rows } = await pool.query<CardRow>(
       `insert into cards (deck_id, front, back, due_on)
-       select id, $2, $3, $5::date from decks where id = $1 and user_id = $4
+       select d.id, $2, $3, $5::date from decks d
+        where d.id = $1 and d.user_id = $4 and ${DECK_IS_LIVE}
        returning id, front, back, repetitions, interval_days as "intervalDays",
                  difficulty, stability, due_on::text as "dueOn",
                  (due_on <= $5::date) as due`,
@@ -97,7 +98,7 @@ export function registerCardRoutes(
               c.difficulty, c.stability, c.due_on::text as "dueOn"
          from cards c join decks d on d.id = c.deck_id
         where d.id = $1 and d.user_id = $2 and c.due_on <= $3::date
-          and ${CARD_IS_LIVE}
+          and ${CARD_IS_LIVE} and ${DECK_IS_LIVE}
         order by c.id`,
       [request.params.id, userId, today()],
     );
@@ -129,7 +130,7 @@ export function registerCardRoutes(
                 (select max(r.reviewed_at) from reviews r where r.card_id = c.id)
                   as "lastReviewedAt"
            from cards c join decks d on d.id = c.deck_id
-          where c.id = $1 and d.user_id = $2 and ${CARD_IS_LIVE}
+          where c.id = $1 and d.user_id = $2 and ${CARD_IS_LIVE} and ${DECK_IS_LIVE}
           for update of c`,
         [request.params.id, userId],
       );
@@ -211,7 +212,8 @@ export function registerCardRoutes(
       `update cards c
           set front = coalesce($3, c.front), back = coalesce($4, c.back)
          from decks d
-        where d.id = c.deck_id and c.id = $1 and d.user_id = $2 and ${CARD_IS_LIVE}
+        where d.id = c.deck_id and c.id = $1 and d.user_id = $2
+          and ${CARD_IS_LIVE} and ${DECK_IS_LIVE}
        returning c.id, c.front, c.back, c.repetitions,
                  c.interval_days as "intervalDays", c.difficulty, c.stability,
                  c.due_on::text as "dueOn", (c.due_on <= $5::date) as due`,
@@ -235,7 +237,8 @@ export function registerCardRoutes(
     const { rowCount } = await pool.query(
       `update cards c set deleted_at = now()
          from decks d
-        where d.id = c.deck_id and c.id = $1 and d.user_id = $2 and ${CARD_IS_LIVE}`,
+        where d.id = c.deck_id and c.id = $1 and d.user_id = $2
+          and ${CARD_IS_LIVE} and ${DECK_IS_LIVE}`,
       [request.params.id, userId],
     );
 

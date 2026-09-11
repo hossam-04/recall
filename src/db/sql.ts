@@ -19,3 +19,16 @@
  * Every query that reads cards aliases the table `c`, so this fits all of them.
  */
 export const CARD_IS_LIVE = "c.deleted_at is null";
+
+/**
+ * Migration 008 did the same to decks, and added a trap cards do not have: a
+ * card in a deleted deck is still live by its own column. Anything reading
+ * cards through a deck therefore needs *both* filters, or a deck you deleted
+ * goes on serving cards to the review screen.
+ *
+ * Every query that reads decks aliases the table `d`. Two places deliberately
+ * omit this and say so: the statistics queries, because a review of a card in a
+ * deleted deck still happened, and account deletion, because closing an account
+ * removes the dead rows along with the live ones.
+ */
+export const DECK_IS_LIVE = "d.deleted_at is null";

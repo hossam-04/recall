@@ -74,9 +74,29 @@ describe("decks", () => {
     await testPool().query("insert into decks (user_id, name) values ($1, $2)", [second, "Algorithms"]);
 
     await violates(
-      "decks_name_unique_per_user",
+      // Renamed by migration 008: a plain constraint became a partial unique
+      // index so that deleted decks stop holding their names.
+      "decks_name_unique_per_live_deck",
       testPool().query("insert into decks (user_id, name) values ($1, $2)", [first, "Algorithms"]),
     );
+  });
+
+  test("a deleted deck stops holding its name", async () => {
+    const userId = await seedUser("a@x.com");
+    await testPool().query("insert into decks (user_id, name) values ($1, $2)", [userId, "Algorithms"]);
+    await testPool().query("update decks set deleted_at = now() where user_id = $1", [userId]);
+
+    // The whole point of the index being partial: the dead row is not in it, so
+    // the name is available. Under the old plain constraint this threw.
+    await expect(
+      testPool().query("insert into decks (user_id, name) values ($1, $2)", [userId, "Algorithms"]),
+    ).resolves.toBeDefined();
+
+    // And any number of dead rows may share a name with each other.
+    await testPool().query("update decks set deleted_at = now() where user_id = $1", [userId]);
+    await expect(
+      testPool().query("insert into decks (user_id, name) values ($1, $2)", [userId, "Algorithms"]),
+    ).resolves.toBeDefined();
   });
 });
 

@@ -21,16 +21,17 @@ Everything below runs against a real Postgres, a real socket, and real Chromium.
 | Layer | What it covers | Size |
 |---|---|---|
 | `tsc --noEmit` | both tsconfigs, strict | — |
-| `vitest run` | unit and integration | 146 tests |
-| `scripts/api-smoke.sh` | a real server driven by curl | 65 assertions |
-| `playwright test` | a real browser, real cookies, real keyboard | 13 specs |
+| `vitest run` | unit and integration | 155 tests |
+| `scripts/api-smoke.sh` | a real server driven by curl | 75 assertions |
+| `playwright test` | a real browser, real cookies, real keyboard | 14 specs |
 
 The whole gate takes about 25 seconds. One non-zero exit is a failure.
 
 Register, sign in, build decks, add cards, review them by keyboard — space
 reveals the answer, 1 to 4 grade it — and read your history back on a statistics
-page. Cards can be edited and deleted, accounts can be closed, and a second user
-gets a 403 on the first user's deck.
+page. Cards and whole decks can be deleted, accounts can be closed, and a second user
+gets a 403 on the first user's deck. Deleting never destroys review history: the
+statistics page still counts a session you did on a deck you later threw away.
 
 A deck can also be exported to a file and imported into another account. The
 file holds the questions and answers and nothing else — how well *you* know a
@@ -95,11 +96,11 @@ src/http/routes/   users, sessions, decks, cards, stats — all under /api
 src/users, src/sessions   argon2 hashing, CSPRNG session and CSRF tokens
 src/stats/         streak, as a pure function
 web/src/           React 19 and react-router; Vite proxies /api to the API
-migrations/        seven .sql files, applied in order, each in its own transaction
+migrations/        eight .sql files, applied in order, each in its own transaction
 tests/, e2e/       roughly 3,200 lines, against real Postgres and real Chromium
 ```
 
-Seventeen routes. Roughly 2,000 lines of server, 1,100 of UI, 3,200 of tests.
+Eighteen routes. Roughly 2,000 lines of server, 1,100 of UI, 3,200 of tests.
 
 A few decisions that shape everything else:
 

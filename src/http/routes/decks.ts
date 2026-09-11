@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { currentUser } from "../auth.js";
-import { CARD_IS_LIVE } from "../../db/sql.js";
+import { CARD_IS_LIVE, DECK_IS_LIVE } from "../../db/sql.js";
 import { today } from "../../scheduler/calendar.js";
 import { parseBody } from "../server.js";
 import { CARD_FRONT, CARD_BACK } from "../card-fields.js";
@@ -36,7 +36,7 @@ const DECK_COLUMNS = `
 
 export async function decksOf(pool: Pool, userId: string): Promise<Deck[]> {
   const { rows } = await pool.query<Deck>(
-    `${DECK_COLUMNS} where d.user_id = $1 group by d.id order by d.name`,
+    `${DECK_COLUMNS} where d.user_id = $1 and ${DECK_IS_LIVE} group by d.id order by d.name`,
     [userId, today()],
   );
   return rows;
@@ -62,7 +62,7 @@ export async function requireOwnedDeck(
             count(c.id)::int as "cardCount",
             (count(c.id) filter (where c.due_on <= $2::date))::int as "dueCount"
        from decks d left join cards c on c.deck_id = d.id and ${CARD_IS_LIVE}
-      where d.id = $1
+      where d.id = $1 and ${DECK_IS_LIVE}
       group by d.id`,
     [deckId, today()],
   );
@@ -212,6 +212,61 @@ export function registerDeckRoutes(app: FastifyInstance, pool: Pool): void {
     const deck = await requireOwnedDeck(pool, request.params.id, currentUser(request), reply);
     if (deck === undefined) return;
     return deck;
+  });
+
+  /**
+   * Soft delete, for the reason migration 008 records: `reviews.card_id` is
+   * `on delete restrict`, so a real delete fails on any deck ever reviewed, and
+   * that refusal is correct — a review of a card in a deck you later deleted
+   * still happened, and the statistics page still counts it.
+   *
+   * The cards are marked too, in the same statement's transaction. Leaving them
+   * live would be invisible today, because every card read now also checks the
+   * deck — but it would leave two sources of truth for "is this card gone",
+   * and the next query written against `cards` alone would disagree.
+   *
+   * The deck's name is released by the partial unique index, so creating a new
+   * deck with the same name works immediately.
+   */
+  app.delete<{ Params: { id: string } }>("/decks/:id", async (request, reply) => {
+    const userId = currentUser(request);
+
+    // Through the shared helper, not a where clause of its own. Deciding
+    // ownership here would have answered 404 for a live deck belonging to
+    // someone else, where every other deck route answers 403 — which is the
+    // precise drift ADR-023 exists to prevent, and it took one test to
+    // reappear. The helper also 404s a deck already deleted, so a second
+    // delete is a 404 rather than another 204.
+    if ((await requireOwnedDeck(pool, request.params.id, userId, reply)) === undefined) return;
+
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+
+      // user_id stays in the statement even though the helper just checked it.
+      // The check and the write are two round trips, and the predicate is what
+      // makes the write safe on its own rather than safe by sequence.
+      await client.query(
+        `update decks d set deleted_at = now()
+          where d.id = $1 and d.user_id = $2 and ${DECK_IS_LIVE}`,
+        [request.params.id, userId],
+      );
+
+      await client.query(
+        `update cards c set deleted_at = now()
+          from decks d
+         where d.id = c.deck_id and d.id = $1 and ${CARD_IS_LIVE}`,
+        [request.params.id],
+      );
+
+      await client.query("commit");
+      return await reply.status(204).send();
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
   });
 
   app.get<{ Params: { id: string } }>("/decks/:id/export", async (request, reply) => {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import { api, type Card, type Deck } from "../api.js";
 import { messageOf } from "../App.js";
 import { Dialog } from "../Dialog.js";
@@ -18,6 +18,7 @@ function describeMemory(card: Card): string {
 
 export function DeckPage() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [deck, setDeck] = useState<Deck | undefined>(undefined);
   const [cards, setCards] = useState<Card[]>([]);
   // `"new"` or the card being edited — one dialog serves both, because the
@@ -27,6 +28,10 @@ export function DeckPage() {
   // Chosen over window.confirm: a native dialog cannot be styled, blocks the
   // thread, and has to be intercepted specially in Playwright.
   const [confirming, setConfirming] = useState<string | undefined>(undefined);
+  // Separate from `confirming`, which holds a card id. Sharing one piece of
+  // state would let a card id and the literal "deck" collide the day ids stop
+  // being numeric.
+  const [confirmingDeck, setConfirmingDeck] = useState(false);
   const [front, setFront] = useState("");
   const [back, setBack] = useState("");
   const [error, setError] = useState("");
@@ -103,6 +108,23 @@ export function DeckPage() {
     }
   }
 
+  /**
+   * Soft delete on the server (migration 008): the deck and its cards are
+   * marked, the reviews stay, and the name is released for reuse. Two presses
+   * like a card, because nothing in this UI can bring it back — and a deck is
+   * a great deal more to lose than one card.
+   */
+  async function deleteDeck() {
+    setError("");
+    try {
+      await api.del(`/decks/${id}`);
+      await navigate("/");
+    } catch (caught) {
+      setError(messageOf(caught));
+      setConfirmingDeck(false);
+    }
+  }
+
   const due = cards.filter((card) => card.due === true).length;
 
   if (deck === undefined) {
@@ -125,6 +147,16 @@ export function DeckPage() {
         </div>
         <span style={{ display: "flex", gap: ".5rem" }}>
           <button onClick={() => void exportDeck()}>Export</button>
+          {confirmingDeck ? (
+            <>
+              <button className="danger" onClick={() => void deleteDeck()}>
+                Really delete this deck
+              </button>
+              <button onClick={() => setConfirmingDeck(false)}>Cancel</button>
+            </>
+          ) : (
+            <button onClick={() => setConfirmingDeck(true)}>Delete deck</button>
+          )}
           <button onClick={() => openDialog("new")}>Add card</button>
           {due > 0 && (
             <Link to={`/decks/${id}/review`}>

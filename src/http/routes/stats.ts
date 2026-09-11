@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { Pool } from "pg";
 import { currentUser } from "../auth.js";
+import { DECK_IS_LIVE } from "../../db/sql.js";
 import { currentStreak } from "../../stats/streak.js";
 import { addDays, localTimeZone, toDateString } from "../../scheduler/calendar.js";
 
@@ -18,12 +19,13 @@ export type Stats = {
  * authorisation: a review belonging to someone else is not filtered out at the
  * end, it never enters the result. ADR-017.
  *
- * What is deliberately absent is `CARD_IS_LIVE`. A review of a card you later
+ * What is deliberately absent is `CARD_IS_LIVE` and `DECK_IS_LIVE`. A review of a card you later
  * deleted still happened, and ADR-029 kept those rows precisely so this page
  * could count them. Applying the filter here would make the history shrink
  * whenever you tidied up, which is the opposite of what an event log is for —
  * and it is the second place in this codebase where the filter that is right
- * everywhere else is wrong.
+ * everywhere else is wrong. Migration 008 made the same true of the deck
+ * filter: deleting a deck must not shorten a streak you actually earned.
  */
 const REVIEWS_OF = `
     from reviews r
@@ -54,9 +56,13 @@ export function registerStatsRoutes(app: FastifyInstance, pool: Pool): void {
         [userId],
       ),
       pool.query<{ decks: number; cards: number }>(
-        `select (select count(*) from decks where user_id = $1)::int as decks,
+        // These two count what you have, not what you did, so both exclude
+        // deleted decks — unlike REVIEWS_OF above, which must not.
+        `select (select count(*) from decks d
+                  where d.user_id = $1 and ${DECK_IS_LIVE})::int as decks,
                 (select count(*) from cards c join decks d on d.id = c.deck_id
-                  where d.user_id = $1 and c.deleted_at is null)::int as cards`,
+                  where d.user_id = $1 and c.deleted_at is null
+                    and ${DECK_IS_LIVE})::int as cards`,
         [userId],
       ),
     ]);

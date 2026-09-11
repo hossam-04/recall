@@ -1402,3 +1402,71 @@ partition of the format into files this app writes and files it reads.
 *Would revisit if:* a genuinely empty file becomes a common mistake rather than
 a rare one, in which case the fix is a warning in the dialog before submitting,
 not a refusal after.
+
+---
+
+## ADR-037 — A deleted deck is marked, and gives up its name
+
+**Decision:** `DELETE /api/decks/:id` marks the deck and its cards with
+`deleted_at` in one transaction. Reviews are untouched. The plain unique
+constraint on `(user_id, name)` becomes a partial unique index over live decks
+only, so the name is immediately reusable. Migration 008.
+
+*Alternatives:* a hard delete cascading through cards to reviews; a hard delete
+of the deck with reviews reparented or orphaned; keeping the plain constraint
+and letting dead decks hold their names forever.
+
+**The database had already decided half of this.** `reviews.card_id` is
+`on delete restrict` (migration 002), so a plain `delete from decks` cascades
+into cards, hits that restrict, and fails outright for any deck ever reviewed.
+Deck deletion was not merely missing; it was impossible without first deciding
+to destroy history. That refusal is correct, and the question it forces is the
+one worth answering: **you review a deck for three months, delete it, and the
+stats page then says your longest streak was 12 days when you know it was 40.
+Bug, or correct?** It is a bug. A review happened. Nothing later makes it not
+have happened, and an event log that shortens when you tidy up is not a log.
+
+**So the statistics queries deliberately do not filter deleted decks**, while
+the two counts on the same page — how many decks and cards you *have* — do.
+That is now the second split of its kind in this file: `REVIEWS_OF` already
+omitted `CARD_IS_LIVE` for exactly the same reason, and the deck filter joins
+it. Reviews answer what you did; counts answer what you have.
+
+**Why the constraint had to change.** A plain unique on `(user_id, name)` keeps
+the dead row in the index, so "Algorithms" could never be created again after
+being deleted once — a permanent tax for a reversible-looking action. A partial
+unique index `where deleted_at is null` states the real rule: names are unique
+among decks that exist. Dead rows are not in the index at all, so any number of
+them may share a name with each other and with the live one. `nulls not
+distinct` was not needed and would have been the wrong tool.
+
+**The trap this introduced, and it is the interesting part.** A card in a
+deleted deck is still live by its own `deleted_at`. Any query checking only
+`CARD_IS_LIVE` goes on serving it, so the deck you deleted keeps feeding the
+review screen. Eleven queries read `decks`; nine now carry `DECK_IS_LIVE` and
+two deliberately do not (statistics, and account deletion, which must remove
+dead rows along with live ones).
+
+**Ownership goes through `requireOwnedDeck`, not a where clause.** The first
+version decided ownership inside the update, which answered 404 for a live deck
+belonging to someone else where every other deck route answers 403. That is
+precisely the drift ADR-023 was written to stop, and it reappeared within an
+hour of someone writing a new route. One test caught it. The helper now owns
+that answer here too.
+
+*Would revisit if:* dead rows ever become a real cost. Nothing reclaims them
+today; a deck deleted years ago still occupies a row, and so do its cards. The
+fix would be a purge that also deletes the reviews, which is the trade this ADR
+declined — so it would need the user to ask for it explicitly.
+
+### What sabotage caught
+
+**Two predicates were untested and looked fine.** Removing `DECK_IS_LIVE` from
+the grading and due-list queries left every test green, because the delete route
+also marks the cards, so `CARD_IS_LIVE` alone already hid them. The second layer
+was decoration as far as the suite could tell. The test that fixes this writes
+the state a bug would produce — deck marked, cards left live, unreachable
+through the API by design — and asserts the card queries refuse it on their own.
+
+That is the fourth time here that a test passed for a reason other than its
+name, and the second where the cause was one filter masking another.

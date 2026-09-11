@@ -55,17 +55,17 @@ test("deleting a card takes two presses and survives a reload", async ({ page })
   await deckWithACard(page, "What is a trie?", "A prefix tree");
 
   await page.getByText("What is a trie?").click();
-  await page.getByRole("button", { name: "Delete" }).click();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
 
   // One press only arms it. The card must still be there.
-  await expect(page.getByRole("button", { name: "Really delete" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Really delete", exact: true })).toBeVisible();
   await expect(page.getByText("What is a trie?")).toBeVisible();
 
   await page.getByRole("button", { name: "Cancel" }).click();
   await expect(page.getByText("What is a trie?")).toBeVisible();
 
-  await page.getByRole("button", { name: "Delete" }).click();
-  await page.getByRole("button", { name: "Really delete" }).click();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("button", { name: "Really delete", exact: true }).click();
 
   await expect(page.getByText("What is a trie?")).toHaveCount(0);
   await expect(page.getByText("No cards yet.")).toBeVisible();

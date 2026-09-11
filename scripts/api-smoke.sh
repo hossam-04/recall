@@ -209,6 +209,45 @@ expect 400 "an over-long card is refused" -X POST "${json[@]}" $CSRF_B -b "$JAR_
   "$BASE/api/decks/import"
 grep -q '"field":"cards.0.front"' /tmp/smoke-body && pass "and says which field" || fail "no field in: $(cat /tmp/smoke-body)"
 
+# --- deleting a deck (migration 008) -----------------------------------------
+# shellcheck disable=SC2086
+expect 201 "alice makes a deck to delete" -X POST "${json[@]}" $CSRF_A \
+  -d '{"name":"Doomed"}' -b "$JAR_A" "$BASE/api/decks"
+DOOMED_DECK=$(sed -n 's/.*"id":"\([0-9]*\)".*/\1/p' /tmp/smoke-body)
+# shellcheck disable=SC2086
+expect 201 "with a card in it" -X POST "${json[@]}" $CSRF_A \
+  -d '{"front":"gone soon","back":"indeed"}' -b "$JAR_A" "$BASE/api/decks/$DOOMED_DECK/cards"
+DOOMED_CARD=$(sed -n 's/.*"id":"\([0-9]*\)".*/\1/p' /tmp/smoke-body)
+# shellcheck disable=SC2086
+expect 201 "that she reviews once" -X POST "${json[@]}" $CSRF_A -d '{"grade":"good"}' \
+  -b "$JAR_A" "$BASE/api/cards/$DOOMED_CARD/reviews"
+
+REVIEWS_BEFORE=$(psql "$DB" -tAc "select count(*) from reviews")
+
+# shellcheck disable=SC2086
+expect 204 "alice deletes the deck" -X DELETE $CSRF_A -b "$JAR_A" "$BASE/api/decks/$DOOMED_DECK"
+# shellcheck disable=SC2086
+expect 404 "deleting it twice is a 404" -X DELETE $CSRF_A -b "$JAR_A" "$BASE/api/decks/$DOOMED_DECK"
+expect 404 "and it cannot be fetched" -b "$JAR_A" "$BASE/api/decks/$DOOMED_DECK"
+# shellcheck disable=SC2086
+expect 404 "nor can its card be graded" -X POST "${json[@]}" $CSRF_A -d '{"grade":"good"}' \
+  -b "$JAR_A" "$BASE/api/cards/$DOOMED_CARD/reviews"
+
+# The point of a soft delete, asserted against the table rather than the API:
+# reviews.card_id is `on delete restrict`, so a hard delete could not have
+# happened at all, and the history has to be exactly as it was.
+REVIEWS_AFTER=$(psql "$DB" -tAc "select count(*) from reviews")
+[ "$REVIEWS_BEFORE" = "$REVIEWS_AFTER" ] && pass "every review survived ($REVIEWS_AFTER)" \
+  || fail "reviews went from $REVIEWS_BEFORE to $REVIEWS_AFTER"
+MARKED=$(psql "$DB" -tAc "select count(*) from cards where deck_id = $DOOMED_DECK and deleted_at is null")
+[ "$MARKED" = "0" ] && pass "and its cards were marked with it" || fail "$MARKED cards left live"
+
+# The partial unique index from migration 008: the dead row no longer holds the
+# name, so it is available again straight away.
+# shellcheck disable=SC2086
+expect 201 "the name is free again" -X POST "${json[@]}" $CSRF_A \
+  -d '{"name":"Doomed"}' -b "$JAR_A" "$BASE/api/decks"
+
 expect 204 "alice logs out" -X DELETE -b "$JAR_A" "$BASE/api/sessions"
 expect 401 "her cookie stops working" -b "$JAR_A" "$BASE/api/decks"
 

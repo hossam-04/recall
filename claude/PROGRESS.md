@@ -16,9 +16,9 @@ that does not touch the authorisation model.
 ```
 $ npm run verify
 tsc --noEmit (both tsconfigs)  → clean
-vitest run                     → 23 files, 146 tests
-./scripts/api-smoke.sh         → 65 assertions, all good
-playwright test                → 13 specs, real Chromium
+vitest run                     → 25 files, 155 tests
+./scripts/api-smoke.sh         → 75 assertions, all good
+playwright test                → 14 specs, real Chromium
 $ echo $?
 0                                          (~20 seconds)
 ```
@@ -88,7 +88,7 @@ sessions, users`.
 ## What breaking things has taught us
 
 Sabotage — deliberately breaking code to see whether a test notices — has found
-**nine tests that passed while measuring something other than their name.**
+**ten tests that passed while measuring something other than their name.**
 
 | Test | Passed even when… | Why it could not see |
 |---|---|---|
@@ -101,6 +101,7 @@ Sabotage — deliberately breaking code to see whether a test notices — has fo
 | rate limit, per account | the per-email limit was deleted outright | both limits were set to three, and `inject` presents one address, so the per-IP counter always ran out first |
 | replay audit | the route always passed zero elapsed days | every review in the test happened within the same second |
 | import, wrong format | the format check was deleted outright | the fixture had no `cards` array either, so the array check rejected it anyway |
+| card in a deleted deck | the deck filter was dropped from grading and the due list | deleting a deck marks its cards too, so the card filter alone already hid them |
 
 Each was rewritten and re-verified against the same sabotage. **A passing test
 is evidence only after you have watched it fail.**
