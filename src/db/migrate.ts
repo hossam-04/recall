@@ -3,7 +3,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { Pool } from "pg";
 
-export const MIGRATIONS_DIR = new URL("../../migrations/", import.meta.url).pathname;
+const MIGRATIONS_DIR = new URL("../../migrations/", import.meta.url).pathname;
 
 type Migration = { version: string; sql: string; checksum: string };
 

@@ -25,7 +25,7 @@ export function newSessionId(): string {
  * cookies or our responses. It must still be unguessable, so it comes from the
  * same CSPRNG for the same reason (ADR-016).
  */
-export const newCsrfToken = newSessionId;
+const newCsrfToken = newSessionId;
 
 export async function createSession(pool: Pool, userId: string): Promise<Session> {
   const id = newSessionId();
@@ -58,7 +58,3 @@ export async function deleteSession(pool: Pool, id: string): Promise<void> {
   await pool.query("delete from sessions where id = $1", [id]);
 }
 
-/** Revoke everything for one user — what a password change must do. */
-export async function deleteSessionsForUser(pool: Pool, userId: string): Promise<void> {
-  await pool.query("delete from sessions where user_id = $1", [userId]);
-}

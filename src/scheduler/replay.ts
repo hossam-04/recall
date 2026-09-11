@@ -42,10 +42,5 @@ export function replayLog(events: readonly ReviewEvent[]): ReplayStep[] {
   return steps;
 }
 
-/** The state a card should currently be in, or `undefined` if never reviewed. */
-export function memoryFromLog(events: readonly ReviewEvent[]): Memory | undefined {
-  return replayLog(events).at(-1)?.memory;
-}
-
 export const GRADE_NUMBERS = { again: 1, hard: 2, good: 3, easy: 4 } as const;
 export type GradeName = keyof typeof GRADE_NUMBERS;

@@ -86,17 +86,30 @@ sessions, users`.
 ## What breaking things has taught us
 
 Sabotage — deliberately breaking code to see whether a test notices — has found
-**four tests that passed while measuring something other than their name.**
+**eight tests that passed while measuring something other than their name.**
 
-| Test | Passed even when… |
-|---|---|
-| M1 timezone | `toISOString` was swapped in (23:00 at UTC+3 is the same date) |
-| migration transaction | `begin`/`commit` were deleted (Postgres wraps multi-statement queries itself) |
-| session id "unguessable" | `randomBytes` became `Math.random` (uniqueness is not entropy) |
-| CSRF | double-submit replaced the synchronizer token |
+| Test | Passed even when… | Why it could not see |
+|---|---|---|
+| M1 timezone | `toISOString` was swapped in | 23:00 at UTC+3 is the same date either way |
+| migration transaction | `begin`/`commit` were deleted | Postgres wraps multi-statement queries itself |
+| session id "unguessable" | `randomBytes` became `Math.random` | uniqueness is not entropy |
+| CSRF | double-submit replaced the synchronizer token | both satisfy a cookie-to-header comparison |
+| soft delete, due list | the `deleted_at` filter was removed from it | the deleted card had been reviewed, and every grade schedules at least a day out — so it could never have been due |
+| stats timezone | `date(reviewed_at)` replaced the explicit zone | the test database and the process shared a zone, so the two answers were identical |
+| rate limit, per account | the per-email limit was deleted outright | both limits were set to three, and `inject` presents one address, so the per-IP counter always ran out first |
+| replay audit | the route always passed zero elapsed days | every review in the test happened within the same second |
 
 Each was rewritten and re-verified against the same sabotage. **A passing test
 is evidence only after you have watched it fail.**
+
+The last three share a shape worth naming: the fixture could not reach the state
+the assertion was about. Nothing was wrong with the assertion. The test simply
+never got near the branch it claimed to cover, and only breaking the code on
+purpose revealed that.
+
+One bug was found the other way round — by a test, before any sabotage. The rate
+limiter's eviction sweep compared stored token counts, which are stale by
+exactly as long as a key has been idle, and idle is what the sweep looks for.
 
 Also: the suite was silently flaky for a whole milestone. Vitest runs test
 *files* in parallel and four of them shared one database, truncating each
@@ -111,6 +124,7 @@ luck. `fileParallelism: false`, ADR-012.
 | 2026-09-07 | 10 | M1, migrations, test harness |
 | 2026-09-08 | 5 | M2 — API, auth, the smoke test |
 | 2026-09-10 | 7+ | CSRF, M3 UI, Playwright, UI rework |
+| 2026-09-11 | 5 | card edit/delete, account closure, rate limiting, stats, FSRS |
 
 **M0–M3 in four calendar days**, against a plan that budgeted 11 sessions for
 them and a 2026-09-20 target for M0–M5. Ahead, and the tripwires below have all
@@ -118,8 +132,8 @@ passed:
 
 - ~~Tripwire 2026-09-09 — M1 done in three days~~ done 09-07
 - ~~Kill check 2026-09-13 — auth and Postgres end to end~~ done 09-08
-- **Ship-without-AI check — 2026-09-20.** If M4 has not started, ship the SRS
-  without generation and say so in the README.
+- ~~Ship-without-AI check — 2026-09-20.~~ **Called early, on 2026-09-11.** M4 is
+  deferred for cost rather than for time, and the README says so.
 - **Pattern check — any 7 consecutive days with no commit.** This is the
   `png-from-scratch` signature (3 days of work, then 35 idle). Still the largest
   risk to the plan; nothing about being ahead of schedule changes it.
@@ -133,8 +147,15 @@ passed:
   Postgres's problem and Postgres does it.
 - **The readline adapter is gone with the CLI**, so ADR-006's untested ~15 lines
   are no longer a gap.
-- **`ease` is unbounded above.** A card answered `easy` forever drifts up with
-  no ceiling. Harmless today; would matter if intervals were not capped.
+- ~~`ease` is unbounded above.~~ **Gone with SM-2** (migration 006). FSRS clamps
+  difficulty to 1–10 and stability to 36,500 days, in the algorithm and again in
+  check constraints.
+- **`cards.repetitions` is decorative now.** FSRS does not use it; it survives
+  because "four in a row" is worth showing and FSRS has no counter a person can
+  read. It is maintained by the grading route, not by the scheduler.
+- **There is no password change**, so there is no "sign out everywhere" either.
+  A helper for it existed, uncalled and untested, and was deleted in the audit
+  rather than left looking like a feature.
 - **Test style is split** — M1's 27 remaining tests use `it(`, the rest use
   `test(`. Cosmetic; it made an audit miscount once.
 
