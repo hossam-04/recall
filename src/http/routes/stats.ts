@@ -1,0 +1,94 @@
+import type { FastifyInstance } from "fastify";
+import type { Pool } from "pg";
+import { currentUser } from "../auth.js";
+import { currentStreak } from "../../stats/streak.js";
+import { addDays, localTimeZone, toDateString } from "../../scheduler/calendar.js";
+
+const WINDOW_DAYS = 30;
+
+export type Stats = {
+  totals: { reviews: number; daysStudied: number; cards: number; decks: number };
+  streak: number;
+  grades: { again: number; hard: number; good: number; easy: number };
+  daily: { day: string; count: number }[];
+};
+
+/**
+ * Every join here goes reviews → cards → decks → user_id. That chain is the
+ * authorisation: a review belonging to someone else is not filtered out at the
+ * end, it never enters the result. ADR-017.
+ *
+ * What is deliberately absent is `CARD_IS_LIVE`. A review of a card you later
+ * deleted still happened, and ADR-029 kept those rows precisely so this page
+ * could count them. Applying the filter here would make the history shrink
+ * whenever you tidied up, which is the opposite of what an event log is for —
+ * and it is the second place in this codebase where the filter that is right
+ * everywhere else is wrong.
+ */
+const REVIEWS_OF = `
+    from reviews r
+    join cards c on c.id = r.card_id
+    join decks d on d.id = c.deck_id
+   where d.user_id = $1`;
+
+export function registerStatsRoutes(app: FastifyInstance, pool: Pool): void {
+  app.get("/stats", async (request) => {
+    const userId = currentUser(request);
+    // The zone travels as a parameter rather than being read from the database
+    // session. `current_date` and `date(timestamptz)` both answer in Postgres's
+    // own TimeZone, which initdb copied from the operating system — so the same
+    // rows would yield different days on a different host.
+    const zone = localTimeZone();
+
+    const [byDay, byGrade, totals] = await Promise.all([
+      pool.query<{ day: string; count: number }>(
+        `select (r.reviewed_at at time zone $2)::date::text as day, count(*)::int as count
+           ${REVIEWS_OF} group by 1 order by 1`,
+        [userId, zone],
+      ),
+      pool.query<{ grade: string; count: number }>(
+        // No zone here: this query has no dates in it. Passing one anyway is
+        // not merely useless — the extended query protocol rejects a bind with
+        // more parameters than the statement declares.
+        `select r.grade, count(*)::int as count ${REVIEWS_OF} group by 1`,
+        [userId],
+      ),
+      pool.query<{ decks: number; cards: number }>(
+        `select (select count(*) from decks where user_id = $1)::int as decks,
+                (select count(*) from cards c join decks d on d.id = c.deck_id
+                  where d.user_id = $1 and c.deleted_at is null)::int as cards`,
+        [userId],
+      ),
+    ]);
+
+    const counts = new Map(byDay.rows.map((row) => [row.day, row.count]));
+    const grades = { again: 0, hard: 0, good: 0, easy: 0 };
+    for (const row of byGrade.rows) {
+      if (row.grade in grades) grades[row.grade as keyof typeof grades] = row.count;
+    }
+
+    const today = toDateString(new Date());
+    const stats: Stats = {
+      totals: {
+        // Summed from the daily rows rather than asked for separately: one
+        // fewer scan, and the total can never disagree with the chart above it.
+        reviews: byDay.rows.reduce((sum, row) => sum + row.count, 0),
+        daysStudied: byDay.rows.length,
+        cards: totals.rows[0]?.cards ?? 0,
+        decks: totals.rows[0]?.decks ?? 0,
+      },
+      streak: currentStreak([...counts.keys()], today),
+      grades,
+      // The zero-fill. A day with no reviews produces no row, so a chart built
+      // straight from the query would silently close the gaps and show a month
+      // of unbroken study. Done here rather than with a `generate_series` left
+      // join because the full day list is already in hand for the streak, and
+      // two date spines in one endpoint is two chances to disagree.
+      daily: Array.from({ length: WINDOW_DAYS }, (_, index) => {
+        const day = toDateString(addDays(new Date(), index - (WINDOW_DAYS - 1)));
+        return { day, count: counts.get(day) ?? 0 };
+      }),
+    };
+    return stats;
+  });
+}

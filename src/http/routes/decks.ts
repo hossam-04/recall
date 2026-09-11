@@ -3,6 +3,7 @@ import type { Pool } from "pg";
 import { z } from "zod";
 import { currentUser } from "../auth.js";
 import { CARD_IS_LIVE } from "../../db/sql.js";
+import { today } from "../../scheduler/calendar.js";
 import { parseBody } from "../server.js";
 
 /**
@@ -29,13 +30,13 @@ type Deck = {
 const DECK_COLUMNS = `
   select d.id, d.name, d.created_at as "createdAt",
          count(c.id)::int as "cardCount",
-         (count(c.id) filter (where c.due_on <= current_date))::int as "dueCount"
+         (count(c.id) filter (where c.due_on <= $2::date))::int as "dueCount"
     from decks d left join cards c on c.deck_id = d.id and ${CARD_IS_LIVE}`;
 
 export async function decksOf(pool: Pool, userId: string): Promise<Deck[]> {
   const { rows } = await pool.query<Deck>(
     `${DECK_COLUMNS} where d.user_id = $1 group by d.id order by d.name`,
-    [userId],
+    [userId, today()],
   );
   return rows;
 }
@@ -58,11 +59,11 @@ export async function requireOwnedDeck(
   const { rows } = await pool.query<Deck & { ownerId: string }>(
     `select d.id, d.name, d.created_at as "createdAt", d.user_id as "ownerId",
             count(c.id)::int as "cardCount",
-            (count(c.id) filter (where c.due_on <= current_date))::int as "dueCount"
+            (count(c.id) filter (where c.due_on <= $2::date))::int as "dueCount"
        from decks d left join cards c on c.deck_id = d.id and ${CARD_IS_LIVE}
       where d.id = $1
       group by d.id`,
-    [deckId],
+    [deckId, today()],
   );
   const deck = rows[0];
   if (deck === undefined) {

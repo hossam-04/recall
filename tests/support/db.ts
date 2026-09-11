@@ -88,9 +88,28 @@ export async function resetDatabase(): Promise<void> {
 let pool: Pool | undefined;
 
 /** The pool tests query through. Same lazy-singleton shape as `src/db/pool.ts`. */
+/**
+ * The test database deliberately runs in a different zone from the Node
+ * process.
+ *
+ * `initdb` copies Postgres's `TimeZone` from the operating system, so on a
+ * developer's machine the database and the application agree by accident — and
+ * every query that asks Postgres what day it is (`current_date`,
+ * `date(timestamptz)`) looks correct while depending on a setting nothing in
+ * this project sets. Pinning the tests to UTC removes the coincidence: any
+ * query that should have named its zone and did not now answers differently
+ * here than it does in production, which is the whole point of a test.
+ */
+const TEST_SESSION_TIME_ZONE = "UTC";
+
 export function testPool(): Pool {
   if (pool === undefined) {
-    pool = new Pool({ connectionString: testDatabaseUrl().toString() });
+    pool = new Pool({
+      connectionString: testDatabaseUrl().toString(),
+      // Applied by the server before the connection is handed out, so every
+      // query on it sees the setting — including the first.
+      options: `-c timezone=${TEST_SESSION_TIME_ZONE}`,
+    });
   }
   return pool;
 }

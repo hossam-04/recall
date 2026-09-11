@@ -6,6 +6,7 @@ import { DecksPage } from "./pages/DecksPage.js";
 import { DeckPage } from "./pages/DeckPage.js";
 import { ReviewPage } from "./pages/ReviewPage.js";
 import { AccountPage } from "./pages/AccountPage.js";
+import { StatsPage } from "./pages/StatsPage.js";
 
 /**
  * Three states, not two. "Not signed in" and "we have not asked yet" are
@@ -55,6 +56,7 @@ export function App() {
       <nav>
         <Link className="brand" to="/">recall</Link>
         <span className="who">
+          <Link className="quiet" to="/stats">Stats</Link>
           <Link className="quiet" to="/account">{session.user.email}</Link>
           <button className="quiet" onClick={() => void signOut()}>Sign out</button>
         </span>
@@ -63,6 +65,7 @@ export function App() {
         <Route path="/" element={<DecksPage />} />
         <Route path="/decks/:id" element={<DeckPage />} />
         <Route path="/decks/:id/review" element={<ReviewPage />} />
+        <Route path="/stats" element={<StatsPage />} />
         <Route
           path="/account"
           element={

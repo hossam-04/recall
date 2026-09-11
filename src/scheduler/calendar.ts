@@ -29,3 +29,33 @@ export function addDays(date: Date, days: number): Date {
   next.setDate(next.getDate() + days);
   return next;
 }
+
+/**
+ * Today, as the application defines it.
+ *
+ * Every query that needs to know what day it is takes this as a bound
+ * parameter instead of calling `current_date`, which answers in Postgres's own
+ * zone. The application is the single authority on its own calendar; the
+ * database is asked to compare dates, not to supply them.
+ */
+export function today(): string {
+  return toDateString(new Date());
+}
+
+/**
+ * The zone every calendar question in this app is answered in.
+ *
+ * `toDateString` and `addDays` above work in the Node process's local zone, so
+ * a due date means "a day where this server is". The statistics queries have to
+ * agree with that or the two disagree about what "today" is — a card can be due
+ * on a day that has not started yet according to the review log.
+ *
+ * Postgres would otherwise answer with its own `TimeZone` setting, which
+ * `initdb` copied from the operating system and which nothing in this project
+ * sets. Passing the zone as a query parameter makes the answer a property of
+ * the application rather than of whichever machine the database happens to be
+ * on.
+ */
+export function localTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}

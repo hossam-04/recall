@@ -14,9 +14,9 @@ card edit/delete is the first and is done.
 ```
 $ npm run verify
 tsc --noEmit (both tsconfigs)  → clean
-vitest run                     → 16 files, 104 tests
+vitest run                     → 19 files, 122 tests
 ./scripts/api-smoke.sh         → 42 assertions, all good
-playwright test                → 8 specs, real Chromium
+playwright test                → 9 specs, real Chromium
 $ echo $?
 0                                          (~20 seconds)
 ```
@@ -45,6 +45,7 @@ src/db/pool.ts              lazy singleton pool
 src/http/server.ts          buildServer(pool), error handler, parseBody, routeTable
 src/http/auth.ts            default-deny authentication + CSRF, PUBLIC_ROUTES
 src/http/rate-limit.ts      token bucket, keyed per address and per account
+src/stats/streak.ts         consecutive study days, a pure function
 src/http/cookies.ts         hand-rolled HttpOnly / SameSite / Secure
 src/http/routes/            users, sessions, decks, cards — all under /api
 src/users, src/sessions     argon2 hashing, CSPRNG session + CSRF tokens
@@ -55,6 +56,7 @@ scripts/api-smoke.sh        the M2 bar, real socket, real curl
 e2e/review.spec.ts          the M3 bar, real Chromium
 e2e/edit-delete.spec.ts     two-press delete and the first PATCH the UI sends
 e2e/account.spec.ts         closing an account, and a wrong password not doing so
+e2e/stats.spec.ts           the numbers a real review session produces
 ```
 
 **Five migrations, six tables.** Verified this session against a fresh empty
@@ -63,7 +65,7 @@ sessions, users`.
 
 ## Decisions that shape everything after them
 
-31 ADRs in `claude/DECISIONS.md`. The load-bearing ones:
+33 ADRs in `claude/DECISIONS.md`. The load-bearing ones:
 
 - **ADR-005** due dates are stored, not recomputed — changing a constant must
   not retroactively move cards already scheduled

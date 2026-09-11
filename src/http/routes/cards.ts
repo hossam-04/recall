@@ -6,7 +6,7 @@ import { parseBody } from "../server.js";
 import { requireOwnedDeck } from "./decks.js";
 import { CARD_IS_LIVE } from "../../db/sql.js";
 import { review } from "../../scheduler/sm2.js";
-import { toDateString, addDays } from "../../scheduler/calendar.js";
+import { toDateString, addDays, today } from "../../scheduler/calendar.js";
 
 const CreateCard = z.object({
   front: z.string().trim().min(1).max(1000),
@@ -56,10 +56,10 @@ export function registerCardRoutes(app: FastifyInstance, pool: Pool): void {
     // in the statement rather than in a check someone can forget to write.
     const { rows } = await pool.query<CardRow>(
       `insert into cards (deck_id, front, back, due_on)
-       select id, $2, $3, current_date from decks where id = $1 and user_id = $4
+       select id, $2, $3, $5::date from decks where id = $1 and user_id = $4
        returning id, front, back, repetitions, interval_days as "intervalDays",
-                 ease, due_on::text as "dueOn", (due_on <= current_date) as due`,
-      [request.params.id, body.front, body.back, userId],
+                 ease, due_on::text as "dueOn", (due_on <= $5::date) as due`,
+      [request.params.id, body.front, body.back, userId, today()],
     );
 
     const card = rows[0];
@@ -73,9 +73,9 @@ export function registerCardRoutes(app: FastifyInstance, pool: Pool): void {
 
     const { rows } = await pool.query<CardRow>(
       `select c.id, c.front, c.back, c.repetitions, c.interval_days as "intervalDays",
-              c.ease, c.due_on::text as "dueOn", (c.due_on <= current_date) as due
+              c.ease, c.due_on::text as "dueOn", (c.due_on <= $2::date) as due
          from cards c where c.deck_id = $1 and ${CARD_IS_LIVE} order by c.id`,
-      [request.params.id],
+      [request.params.id, today()],
     );
     return rows;
   });
@@ -89,10 +89,10 @@ export function registerCardRoutes(app: FastifyInstance, pool: Pool): void {
       `select c.id, c.front, c.back, c.repetitions, c.interval_days as "intervalDays",
               c.ease, c.due_on::text as "dueOn"
          from cards c join decks d on d.id = c.deck_id
-        where d.id = $1 and d.user_id = $2 and c.due_on <= current_date
+        where d.id = $1 and d.user_id = $2 and c.due_on <= $3::date
           and ${CARD_IS_LIVE}
         order by c.id`,
-      [request.params.id, userId],
+      [request.params.id, userId, today()],
     );
     return rows;
   });
@@ -176,8 +176,8 @@ export function registerCardRoutes(app: FastifyInstance, pool: Pool): void {
         where d.id = c.deck_id and c.id = $1 and d.user_id = $2 and ${CARD_IS_LIVE}
        returning c.id, c.front, c.back, c.repetitions,
                  c.interval_days as "intervalDays", c.ease,
-                 c.due_on::text as "dueOn", (c.due_on <= current_date) as due`,
-      [request.params.id, userId, body.front ?? null, body.back ?? null],
+                 c.due_on::text as "dueOn", (c.due_on <= $5::date) as due`,
+      [request.params.id, userId, body.front ?? null, body.back ?? null, today()],
     );
 
     const card = rows[0];

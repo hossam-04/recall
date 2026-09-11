@@ -90,4 +90,11 @@ export type Card = {
   due?: boolean;
 };
 export type Grade = "again" | "hard" | "good" | "easy";
+/** Mirrors `Stats` in src/http/routes/stats.ts. */
+export type Stats = {
+  totals: { reviews: number; daysStudied: number; cards: number; decks: number };
+  streak: number;
+  grades: Record<Grade, number>;
+  daily: { day: string; count: number }[];
+};
 export type GradeResult = { repetitions: number; intervalDays: number; ease: number; dueOn: string };

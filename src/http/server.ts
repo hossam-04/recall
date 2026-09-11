@@ -5,6 +5,7 @@ import { LIMITS, type Limit } from "./rate-limit.js";
 import { registerCardRoutes } from "./routes/cards.js";
 import { registerDeckRoutes } from "./routes/decks.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
+import { registerStatsRoutes } from "./routes/stats.js";
 import { registerUserRoutes } from "./routes/users.js";
 import type { ZodType } from "zod";
 
@@ -100,6 +101,7 @@ export function buildServer(
       registerSessionRoutes(api, pool);
       registerDeckRoutes(api, pool);
       registerCardRoutes(api, pool);
+      registerStatsRoutes(api, pool);
     },
     { prefix: "/api" },
   );

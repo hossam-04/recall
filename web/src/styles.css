@@ -152,3 +152,26 @@ a { color: var(--accent); }
 .card-actions button { font-size: .8rem; padding: .3rem .6rem; }
 button.danger { border-color: var(--danger); color: var(--danger); }
 button.danger:hover { background: var(--danger); color: var(--panel); }
+
+/* ---------- statistics ---------- */
+h2 { font-size: 1.05rem; font-weight: 650; margin: 2.25rem 0 .75rem; }
+.figures + h2 { margin-top: 2rem; }
+.figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .75rem; }
+.figure {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem; display: flex; flex-direction: column; gap: .25rem;
+}
+.figure strong { font-size: 1.9rem; font-weight: 650; letter-spacing: -0.02em; line-height: 1; }
+.figure span { color: var(--muted); font-size: .8rem; }
+
+.spark {
+  display: flex; align-items: flex-end; gap: 2px; height: 7rem; padding: .75rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.spark .bar { flex: 1; background: var(--accent); border-radius: 2px 2px 0 0; min-height: 3px; }
+.spark .bar.empty-day { background: var(--line); }
+
+.grade-row { display: flex; align-items: center; gap: .75rem; }
+.grade-bar { height: .5rem; border-radius: 999px; background: var(--accent-soft); min-width: 0; }
+.pill.grade-again { background: var(--danger); color: var(--panel); }
+.pill.grade-hard, .pill.grade-good, .pill.grade-easy { background: var(--accent-soft); color: var(--accent); }

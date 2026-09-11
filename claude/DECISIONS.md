@@ -1081,3 +1081,78 @@ first — every assertion about the per-email limit was in fact exercising the
 per-IP one. Deleting the per-email check entirely left the file green. The two
 limits are now tested apart, with the other one set wide. That is the sixth test
 in this project found to be measuring nothing, and the fifth found by sabotage.
+
+## ADR-032 — One definition of "today"
+
+**Decision.** No query asks the database what day it is. The application
+computes today in the Node process's zone and passes it as a bound parameter.
+`current_date` is gone from `src/`, and a test fails the build if it comes back.
+
+**The bug this closes.** The scheduler has always decided due dates in local
+time — `toDateString` works in the process's zone deliberately, because a due
+date is a calendar day where the person is. Meanwhile five queries compared
+those dates against `current_date`, which answers in Postgres's own `TimeZone`.
+Nothing in this project sets that; `initdb` copied it from the operating system.
+On one machine the two agree and everything looks correct. They are still two
+definitions, and the disagreement would appear as cards falling due on the wrong
+side of midnight — the same class of bug as M1's `toISOString`, one layer down.
+
+**Why the test database now runs in UTC.** `tests/support/db.ts` pins the
+session zone to UTC while the process stays in Africa/Cairo. Before that, the
+coincidence that made the bug invisible in production also made it invisible in
+the tests: substituting `date(reviewed_at)` for the explicit zone passed every
+assertion. With the zones deliberately different, it fails. A test environment
+that reproduces your machine's accidental agreement is a test environment that
+cannot find this class of bug.
+
+**Why a source check rather than a behavioural one.** The two definitions differ
+only during the hours when the offsets straddle midnight, so a runtime test for
+`current_date` would pass all afternoon and fail at 2am. `tests/http/
+one-definition-of-today.test.ts` reads `src/` and fails on the identifier. Same
+reasoning as the route-table enumerations: the guarantee has to survive the next
+query nobody has written yet.
+
+**Would switch if** the application ever ran in more than one zone at once —
+users in different countries, say. Then "today" is a property of the person, not
+of the process, and the parameter would come from a column on `users` rather
+than from `Intl`.
+
+## ADR-033 — The statistics page reads the event log
+
+**Decision.** `GET /api/stats` computes totals, a grade breakdown, a thirty-day
+daily series and the current streak, all from `reviews`. Card state is not
+consulted except to count how many cards and decks exist.
+
+**This is the first thing that has ever read that table.** Until now `reviews`
+had one writer and no readers, which was the honest case against it — ADR-010
+justified the table primarily on M5, and M5 is deferred for cost. The stats page
+is what makes the argument concrete rather than prospective: card state can say
+twelve cards are due; it cannot say you reviewed forty cards this week, because
+`repetitions` resets to zero on a lapse and is not a count of anything.
+
+**The filter that is right everywhere else is wrong here.** The joins
+deliberately omit `CARD_IS_LIVE`. A review of a card you later deleted still
+happened, and ADR-029 kept those rows precisely so this page could count them.
+Applying the filter would make your history shrink whenever you tidied up. That
+is now the second such place, after the account-deletion transaction in ADR-030,
+and both are covered by a test that fails if the filter is added.
+
+**Zero-filled in TypeScript, not with `generate_series`.** The obvious query,
+`select date(reviewed_at), count(*) ... group by 1`, is wrong twice: it omits
+days with no reviews, so a chart built from it closes its own gaps and shows a
+month of unbroken study that never happened; and `date()` answers in the
+database's zone (ADR-032). The zone is fixed by parameter. The zero-fill happens
+in the handler because the full list of days is already there for the streak,
+and two date spines in one endpoint is two chances to disagree. **Would switch**
+to a `generate_series` left join if the row count ever made fetching every
+distinct day unreasonable, which for one person is a few hundred rows a year.
+
+**The streak is a pure function** in `src/stats/streak.ts`, not a
+gaps-and-islands query. It is four lines of SQL nobody can read and it cannot be
+tested without a database, whereas an off-by-one rule about calendar days
+deserves cheap exhaustive coverage — month boundaries, year boundaries, leap
+days, and a spring-forward DST boundary that would break any implementation
+stepping backwards through local midnight.
+
+**Yesterday counts toward the streak.** A streak that broke at midnight would
+report zero for most of every morning, before you had any chance to study.

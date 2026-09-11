@@ -77,6 +77,7 @@ separately. `claude/PROGRESS.md` lists what is being built in their place.
 | 2 | Postgres, Fastify API, session auth | `./scripts/api-smoke.sh` exits 0 | ☑ |
 | 3 | React review UI | `npx playwright test` green | ☑ |
 | — | Edit/delete, account closure, rate limiting | `npm run verify` exits 0 | ☑ |
+| — | Statistics from the review log | `npm run verify` exits 0 | ☑ |
 | 4 | AI generation, both modes, approval queue | `npm run verify` green | deferred |
 | 5 | Evals, cost tracking, degradation | `npm run eval` prints a scored table | ☐ |
 | 6 | *Stretch:* FSRS + differential test vs `ts-fsrs` | 10k histories match | ☐ |
