@@ -1371,3 +1371,34 @@ card front before pressing a key is not enough: the graded card's front stays on
 screen until the request lands, so the wait passes instantly and the next key
 arrives mid-transition, where the handler reads it as a grade key and drops it.
 Each iteration now pins the queue count and asserts nothing is revealed.
+
+### Amended the same day — two bugs the tests did not catch
+
+Reported from the browser as "Invalid request body" on an import. Two defects,
+and the tests above missed both because each sat in a gap between layers.
+
+**The client threw away the reason.** `parseBody` answers a 400 with a generic
+`error` plus a `details` array naming the field and the message. `web/src/api.ts`
+read only `error`, so every validation failure anywhere in the app arrived on
+screen as the same six words. The server had already done the work; the client
+discarded it. It now prefers `details` and keeps `error` as the fallback for
+routes that answer with a plain message.
+
+No test could have caught this, because no test looked at what a person sees.
+The integration tests assert status codes and read `details` directly from the
+response; the browser specs had never asserted on an error message from the
+server. There is one now.
+
+**Export could produce a file import refused.** A deck whose cards have all been
+soft-deleted exports `cards: []`, and the import schema required at least one —
+so this app wrote a file it could not read, and the failure appeared only on the
+machine doing the import. The lower bound is gone. Importing an empty deck
+creates an empty deck, which is a thing you can already make.
+
+The rule that was violated is worth naming: **anything export can produce,
+import must accept.** The `min(1)` felt like input hygiene and was actually a
+partition of the format into files this app writes and files it reads.
+
+*Would revisit if:* a genuinely empty file becomes a common mistake rather than
+a rare one, in which case the fix is a warning in the dialog before submitting,
+not a refusal after.

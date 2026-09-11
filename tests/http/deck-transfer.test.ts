@@ -130,12 +130,27 @@ describe("import", () => {
     expect(response.statusCode).toBe(400);
   });
 
-  test("refuses an empty deck and an oversized one", async () => {
-    const card = { front: "q", back: "a" };
-    for (const cards of [[], Array.from({ length: 1001 }, () => card)]) {
-      const response = await importDeck(bob, { format: DECK_FORMAT, name: "Borrowed", cards });
-      expect(response.statusCode).toBe(400);
-    }
+  test("refuses more cards than the cap", async () => {
+    const response = await importDeck(bob, {
+      format: DECK_FORMAT, name: "Borrowed",
+      cards: Array.from({ length: 1001 }, () => ({ front: "q", back: "a" })),
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  test("accepts anything export can produce, including a deck with no cards", async () => {
+    // The round trip has to be total. Export happily writes `cards: []` for a
+    // deck whose cards are all soft-deleted, and a file this app produced but
+    // cannot read is a trap that only shows up on the other machine.
+    const { id, cardIds } = await deckWithCards(alice, "Emptied", "only card");
+    await app.inject({ method: "DELETE", url: `/api/cards/${cardIds[0]}`, ...as(alice) });
+
+    const file = (await exportDeck(alice, id)).json();
+    expect(file.cards).toEqual([]);
+
+    const created = await importDeck(bob, file);
+    expect(created.statusCode).toBe(201);
+    expect(created.json()).toMatchObject({ name: "Emptied", cardCount: 0, dueCount: 0 });
   });
 
   test("conflicts on a name the importer already owns, and writes nothing", async () => {

@@ -144,3 +144,62 @@ test("choosing a file that is not a recall deck says so without a round trip", a
   await expect(dialog.getByText("That is not a recall deck file.")).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Import deck" })).toBeDisabled();
 });
+
+test("a server-side rejection says which field and why", async ({ page }) => {
+  await register(page);
+  await page.getByRole("button", { name: "Import" }).click();
+  const dialog = page.getByRole("dialog", { name: "Import a deck" });
+
+  // A real recall file that only the server can fault: the card text is over
+  // the limit the card route enforces. This used to reach the screen as the
+  // bare words "Invalid request body" — the server had already worked out the
+  // field and the reason, and the client dropped both on the floor.
+  await dialog.getByLabel("Deck file").setInputFiles({
+    name: "toolong.recall.json", mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify({
+      format: "recall.deck.v1", name: "Too long",
+      cards: [{ front: "x".repeat(1001), back: "a" }],
+    }), "utf8"),
+  });
+  await dialog.getByRole("button", { name: "Import deck" }).click();
+
+  await expect(dialog.getByRole("alert")).toContainText("cards.0.front");
+  await expect(dialog.getByRole("alert")).not.toContainText("Invalid request body");
+});
+
+test("a deck whose cards were all deleted still round-trips", async ({ page, context }) => {
+  await register(page);
+  await page.getByRole("button", { name: "New deck" }).click();
+  await page.getByLabel("Name").fill("Emptied");
+  await page.getByRole("button", { name: "Create deck" }).click();
+  await page.getByRole("link", { name: /Emptied/ }).click();
+  await addCard(page, "doomed", "not for long");
+
+  await page.locator("details").first().locator("summary").click();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("button", { name: "Really delete" }).click();
+  await expect(page.getByText("0 cards")).toBeVisible();
+
+  const download = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Export" }).click(),
+  ]).then(([event]) => event);
+  const chunks: Buffer[] = [];
+  for await (const chunk of await download.createReadStream()) chunks.push(chunk as Buffer);
+
+  // Export writes an empty card list here. Refusing that on import made the app
+  // produce a file it could not read, and the failure only appeared on the
+  // machine doing the import.
+  const other = await context.browser()!.newPage();
+  await register(other);
+  await other.getByRole("button", { name: "Import" }).click();
+  const dialog = other.getByRole("dialog", { name: "Import a deck" });
+  await dialog.getByLabel("Deck file").setInputFiles({
+    name: "emptied.recall.json", mimeType: "application/json",
+    buffer: Buffer.concat(chunks),
+  });
+  await dialog.getByRole("button", { name: "Import deck" }).click();
+
+  await expect(other.getByRole("link", { name: /Emptied/ })).toBeVisible();
+  await other.close();
+});

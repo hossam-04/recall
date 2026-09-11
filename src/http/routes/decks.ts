@@ -104,16 +104,19 @@ export const DECK_FORMAT = "recall.deck.v1";
  * The cap is on the array, not just on each element: a thousand valid cards is
  * still a request that holds a transaction open and writes a thousand rows, and
  * Fastify's 1 MB body limit is a blunter instrument than a count the error
- * message can explain.
+ * message can explain. There is deliberately no lower bound — see below.
  */
 const MAX_IMPORT_CARDS = 1000;
 
 const ImportDeck = z.object({
   format: z.literal(DECK_FORMAT, { message: `Not a ${DECK_FORMAT} file` }),
   name: z.string().trim().min(1).max(100),
-  cards: z.array(z.object({ front: CARD_FRONT, back: CARD_BACK }))
-    .min(1, { message: "A deck file with no cards imports nothing" })
-    .max(MAX_IMPORT_CARDS),
+  // No lower bound. Export writes `cards: []` for a deck whose cards have all
+  // been soft-deleted, and refusing that here made this app produce a file it
+  // could not read — a failure that only appears on the machine doing the
+  // import. The round trip has to be total, and importing nothing is a deck
+  // with no cards, which is a thing you can already create.
+  cards: z.array(z.object({ front: CARD_FRONT, back: CARD_BACK })).max(MAX_IMPORT_CARDS),
 });
 
 const UNIQUE_VIOLATION = "23505";

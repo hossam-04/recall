@@ -21,9 +21,9 @@ Everything below runs against a real Postgres, a real socket, and real Chromium.
 | Layer | What it covers | Size |
 |---|---|---|
 | `tsc --noEmit` | both tsconfigs, strict | — |
-| `vitest run` | unit and integration | 145 tests |
-| `scripts/api-smoke.sh` | a real server driven by curl | 57 assertions |
-| `playwright test` | a real browser, real cookies, real keyboard | 11 specs |
+| `vitest run` | unit and integration | 146 tests |
+| `scripts/api-smoke.sh` | a real server driven by curl | 65 assertions |
+| `playwright test` | a real browser, real cookies, real keyboard | 13 specs |
 
 The whole gate takes about 25 seconds. One non-zero exit is a failure.
 

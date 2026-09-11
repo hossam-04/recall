@@ -181,6 +181,34 @@ ORPHANS=$(psql "$DB" -tAc "select count(*) from cards where deck_id not in (sele
 
 expect 403 "bob cannot export alice's deck" -b "$JAR_B" "$BASE/api/decks/$DECK/export"
 
+# The round trip must be total. A deck whose cards were all soft-deleted exports
+# an empty card list, and refusing that on import made this app produce a file it
+# could not read — a failure that only surfaces on the importing machine.
+# shellcheck disable=SC2086
+expect 201 "alice makes a deck and empties it" -X POST "${json[@]}" $CSRF_A \
+  -d '{"name":"Emptied"}' -b "$JAR_A" "$BASE/api/decks"
+EMPTIED=$(sed -n 's/.*"id":"\([0-9]*\)".*/\1/p' /tmp/smoke-body)
+# shellcheck disable=SC2086
+expect 201 "with one card" -X POST "${json[@]}" $CSRF_A \
+  -d '{"front":"doomed","back":"not for long"}' -b "$JAR_A" "$BASE/api/decks/$EMPTIED/cards"
+DOOMED=$(sed -n 's/.*"id":"\([0-9]*\)".*/\1/p' /tmp/smoke-body)
+# shellcheck disable=SC2086
+expect 204 "then deletes it" -X DELETE $CSRF_A -b "$JAR_A" "$BASE/api/cards/$DOOMED"
+expect 200 "the empty deck still exports" -b "$JAR_A" "$BASE/api/decks/$EMPTIED/export"
+cp /tmp/smoke-body /tmp/smoke-empty.json
+grep -q '"cards":\[\]' /tmp/smoke-empty.json && pass "with no cards in it" || fail "expected an empty card list: $(cat /tmp/smoke-empty.json)"
+# shellcheck disable=SC2086
+expect 201 "and bob can import what she exported" -X POST "${json[@]}" $CSRF_B \
+  -d @/tmp/smoke-empty.json -b "$JAR_B" "$BASE/api/decks/import"
+
+# A rejection names the field and the reason. The client shows `details` when
+# they are there, so a generic message here is a generic message on screen.
+# shellcheck disable=SC2086
+expect 400 "an over-long card is refused" -X POST "${json[@]}" $CSRF_B -b "$JAR_B" \
+  -d "{\"format\":\"recall.deck.v1\",\"name\":\"Too long\",\"cards\":[{\"front\":\"$(printf 'x%.0s' $(seq 1 1001))\",\"back\":\"a\"}]}" \
+  "$BASE/api/decks/import"
+grep -q '"field":"cards.0.front"' /tmp/smoke-body && pass "and says which field" || fail "no field in: $(cat /tmp/smoke-body)"
+
 expect 204 "alice logs out" -X DELETE -b "$JAR_A" "$BASE/api/sessions"
 expect 401 "her cookie stops working" -b "$JAR_A" "$BASE/api/decks"
 

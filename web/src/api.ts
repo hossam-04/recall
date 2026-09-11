@@ -33,6 +33,26 @@ function csrfToken(): string {
   return "";
 }
 
+/**
+ * Turns an error body into something worth showing a person.
+ *
+ * parseBody answers a 400 with a generic `error` plus a `details` array naming
+ * the field and the reason. Reading only `error` collapsed every validation
+ * failure in the app into "Invalid request body", which is exactly as useful as
+ * saying nothing — the server had already worked out which field was wrong and
+ * why, and the client threw it away.
+ */
+function describe(parsed: unknown): string {
+  if (typeof parsed !== "object" || parsed === null) return "";
+  const body = parsed as { error?: unknown; details?: { field?: string; message?: string }[] };
+  const details = Array.isArray(body.details)
+    ? body.details.map((d) => `${d.field ?? "body"}: ${d.message ?? ""}`.trim()).join("; ")
+    : "";
+  // The specific reason wins. `error` stays as the fallback for every route
+  // that answers with a plain message and no details.
+  return details !== "" ? details : body.error === undefined ? "" : String(body.error);
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = {};
   if (body !== undefined) headers["content-type"] = "application/json";
@@ -54,11 +74,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   const parsed: unknown = text === "" ? undefined : JSON.parse(text);
 
   if (!response.ok) {
-    const message =
-      typeof parsed === "object" && parsed !== null && "error" in parsed
-        ? String((parsed as { error: unknown }).error)
-        : response.statusText;
-    throw new ApiError(response.status, message);
+    throw new ApiError(response.status, describe(parsed) || response.statusText);
   }
   return parsed as T;
 }

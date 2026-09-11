@@ -16,9 +16,9 @@ that does not touch the authorisation model.
 ```
 $ npm run verify
 tsc --noEmit (both tsconfigs)  → clean
-vitest run                     → 23 files, 145 tests
-./scripts/api-smoke.sh         → 57 assertions, all good
-playwright test                → 11 specs, real Chromium
+vitest run                     → 23 files, 146 tests
+./scripts/api-smoke.sh         → 65 assertions, all good
+playwright test                → 13 specs, real Chromium
 $ echo $?
 0                                          (~20 seconds)
 ```
@@ -168,6 +168,17 @@ Three things went wrong and all three are worth keeping:
 - **A browser spec was flaky in the full run and green alone.** Waiting for a
   card front is not a synchronisation point, because the graded card's front
   stays on screen until the request lands.
+
+**Then the feature was used, and broke immediately.** An import answered
+"Invalid request body" and nothing else. Two defects behind it, neither visible
+to any test that existed: the client read only the generic `error` and dropped
+the `details` array that named the field, and export could write `cards: []` for
+an emptied deck while import required at least one — this app producing a file
+it could not read. The rule now stated in ADR-036: anything export can produce,
+import must accept.
+
+The gap both lived in is the same one: no test had ever asserted on what a
+person actually sees when the server says no.
 
 Also worth remembering: `npm run migrate` reported nothing pending on a
 migration that had just been written. Not a bug. A dev server left running under
