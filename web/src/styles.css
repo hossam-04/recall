@@ -142,3 +142,13 @@ button.primary kbd { border-color: rgb(255 255 255 / .35); color: rgb(255 255 25
 .error { color: var(--danger); font-size: .88rem; margin: .5rem 0 0; }
 .muted { color: var(--muted); font-size: .85rem; }
 a { color: var(--accent); }
+
+/* ---------- card edit / delete ---------- */
+/* Revealed only inside an opened <details>, so browsing cannot mis-click. */
+.card-actions {
+  display: flex; gap: .4rem; margin-top: .75rem;
+  padding-top: .75rem; border-top: 1px solid var(--line);
+}
+.card-actions button { font-size: .8rem; padding: .3rem .6rem; }
+button.danger { border-color: var(--danger); color: var(--danger); }
+button.danger:hover { background: var(--danger); color: var(--panel); }

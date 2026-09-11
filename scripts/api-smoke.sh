@@ -95,6 +95,24 @@ grep -q '"intervalDays":6' /tmp/smoke-body && pass "second good -> 6 days" || fa
 REVIEWS=$(psql "$DB" -tAc "select count(*) from reviews")
 [ "$REVIEWS" = "2" ] && pass "both reviews were recorded as events (ADR-010)" || fail "expected 2 review rows, got $REVIEWS"
 
+# --- editing and soft delete (migration 005) ---------------------------------
+# shellcheck disable=SC2086
+expect 200 "alice edits the card" -X PATCH "${json[@]}" $CSRF_A \
+  -d '{"back":"A complete binary tree with the heap property"}' -b "$JAR_A" "$BASE/api/cards/$CARD"
+grep -q 'complete binary tree' /tmp/smoke-body && pass "the edit came back" || fail "edit not returned"
+grep -q '"intervalDays":6' /tmp/smoke-body && pass "editing did not reschedule it" || fail "edit moved the schedule"
+
+# shellcheck disable=SC2086
+expect 204 "alice deletes the card" -X DELETE $CSRF_A -b "$JAR_A" "$BASE/api/cards/$CARD"
+expect 404 "deleting it twice is a 404" -X DELETE $CSRF_A -b "$JAR_A" "$BASE/api/cards/$CARD"
+expect 200 "the deck list still answers" -b "$JAR_A" "$BASE/api/decks"
+grep -q '"cardCount":0' /tmp/smoke-body && pass "and counts the deck as empty" || fail "count still includes it: $(cat /tmp/smoke-body)"
+
+KEPT=$(psql "$DB" -tAc "select count(*) from reviews where card_id = $CARD")
+[ "$KEPT" = "2" ] && pass "its reviews survived the delete" || fail "expected 2 review rows, got $KEPT"
+GONE=$(psql "$DB" -tAc "select deleted_at is not null from cards where id = $CARD")
+[ "$GONE" = "t" ] && pass "the card row is marked, not removed" || fail "card row is gone or unmarked: '$GONE'"
+
 expect 201 "bob registers"  -X POST "${json[@]}" -d "$B" "$BASE/api/users"
 expect 201 "bob logs in"    -X POST "${json[@]}" -d "$B" -c "$JAR_B" "$BASE/api/sessions"
 expect 403 "bob is refused alice's deck" -b "$JAR_B" "$BASE/api/decks/$DECK"

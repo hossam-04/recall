@@ -64,15 +64,19 @@ cp .env.example .env
 > `npm run eval` will call the real Claude API and cost real money. It never runs
 > in CI and never runs as part of `verify`.
 
+**M4 and M5 are deferred for cost.** They need roughly $20–40 of Anthropic API
+credits, which a Claude subscription does not provide — API usage is metered
+separately. `claude/PROGRESS.md` lists what is being built in their place.
+
 ## Milestones
 
 | # | Goal | Bar | Done |
 |---|---|---|---|
 | 0 | Toolchain + repo scaffold | `npm run verify` exits 0 | ☑ |
 | 1 | SM-2 scheduler + review CLI | `npm test` green | ☑ |
-| 2 | Postgres, Fastify API, session auth | `./scripts/api-smoke.sh` exits 0 | ☐ |
-| 3 | React review UI | `npx playwright test` green | ☐ |
-| 4 | AI generation, both modes, approval queue | `npm run verify` green | ☐ |
+| 2 | Postgres, Fastify API, session auth | `./scripts/api-smoke.sh` exits 0 | ☑ |
+| 3 | React review UI | `npx playwright test` green | ☑ |
+| 4 | AI generation, both modes, approval queue | `npm run verify` green | deferred |
 | 5 | Evals, cost tracking, degradation | `npm run eval` prints a scored table | ☐ |
 | 6 | *Stretch:* FSRS + differential test vs `ts-fsrs` | 10k histories match | ☐ |
 

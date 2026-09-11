@@ -919,3 +919,73 @@ right validation for a file nobody reads is no file.
 without a browser, and M1's demo — "answer five cards in the terminal and watch
 the intervals grow" — is no longer reproducible from this repo. It is in the
 git history and in ADR-004 through ADR-009.
+
+## ADR-029 — Deleting a card marks it; the reviews stay
+
+**Decision.** `cards.deleted_at timestamptz` (migration 005). `DELETE
+/api/cards/:id` sets it. Every read of `cards` filters `deleted_at is null`.
+Nothing in the product removes a card row, and nothing removes a review row.
+
+**Alternatives.**
+
+*Hard delete, with `reviews.card_id` changed to `on delete cascade`.* Simplest
+possible implementation, and it makes the schema honest — a deleted card really
+is gone. Rejected because the cards most likely to be deleted are the bad ones,
+and their review history is precisely what the stats page reads and what an
+FSRS scheduler would be fitted from. Deleting the card would silently delete the
+evidence about it.
+
+*Refuse to delete any card that has been reviewed*, which is what migration
+002's `on delete restrict` already did by accident. Cheapest and completely
+honest. Rejected because the button would then work on new cards and fail on
+exactly the ones you want gone, which is the opposite of useful.
+
+**Would switch if** the `deleted_at is null` filter starts being forgotten in
+practice despite the test below, or if a purge requirement arrives that the
+mark cannot satisfy. At that point the answer is a database view that the
+application reads instead of the table, so forgetting is impossible rather than
+merely caught.
+
+**What the decision actually costs.** Five queries across two modules now carry
+a filter, and a sixth written next month will not carry it unless someone
+remembers. A missing `where` clause is not a constraint violation, so Postgres
+can never catch this. Two mitigations, because neither alone is enough:
+
+- One exported fragment, `CARD_IS_LIVE` in `src/db/sql.ts`, so there is a single
+  place to get it right.
+- `tests/http/soft-delete.test.ts` enumerates `app.routeTable` and asserts that
+  **no** GET route mentions a deleted card — not the routes under `/cards`, all
+  of them. The deck list reports a card count, and that count is exactly the
+  kind of place the filter gets forgotten. A separate test fails if a new
+  parameterised GET route appears that the enumeration cannot drive, so the
+  coverage cannot quietly stop being total.
+
+Verified by sabotage: each of the seven filter sites was removed on its own and
+each turned a test red.
+
+**Two things this got wrong on the way, recorded because both are the kind of
+mistake that repeats.**
+
+*An import cycle.* The fragment started in `routes/cards.ts`, which
+`routes/decks.ts` then imported — but `cards.ts` already imports
+`requireOwnedDeck` from `decks.ts`. Two modules may import each other; what
+fails is reading a `const` from the other before it has finished evaluating,
+which a top-level query string does. The error is `Cannot access
+'CARD_IS_LIVE' before initialization`, and its *shape* depends on which module
+is loaded first — a hard crash from one entry point, a 500 from another. A
+fragment both modules need belongs to neither, hence `src/db/sql.ts`.
+
+*A test that passed while measuring nothing.* The first version of the
+enumeration deleted a card that had been reviewed, then asserted it was absent
+from the due list. But every grade, `again` included, schedules at least one day
+out, so a reviewed card can never be due — the assertion covered a case that
+cannot occur. Deleting the filter from the due query left the suite green. The
+fixture now also deletes a card that was never reviewed. This is the fifth test
+in this project found to be measuring nothing, and the fourth found by
+deliberately breaking the code rather than by reading it.
+
+**Still open.** Deleting a *deck* is not implemented, and cannot be as things
+stand: `decks → cards` is `on delete cascade` and `cards → reviews` is `on
+delete restrict`, so Postgres refuses a deck delete the moment any of its cards
+has been reviewed. The same soft-delete answer probably applies, but the column
+is not being added speculatively.

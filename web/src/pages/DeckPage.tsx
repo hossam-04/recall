@@ -8,7 +8,13 @@ export function DeckPage() {
   const { id } = useParams();
   const [deck, setDeck] = useState<Deck | undefined>(undefined);
   const [cards, setCards] = useState<Card[]>([]);
-  const [adding, setAdding] = useState(false);
+  // `"new"` or the card being edited — one dialog serves both, because the
+  // form is identical and two copies of it would drift apart.
+  const [editing, setEditing] = useState<Card | "new" | undefined>(undefined);
+  // The id whose delete button has been pressed once. A second press confirms.
+  // Chosen over window.confirm: a native dialog cannot be styled, blocks the
+  // thread, and has to be intercepted specially in Playwright.
+  const [confirming, setConfirming] = useState<string | undefined>(undefined);
   const [front, setFront] = useState("");
   const [back, setBack] = useState("");
   const [error, setError] = useState("");
@@ -28,17 +34,46 @@ export function DeckPage() {
 
   useEffect(() => void load(), [load]);
 
-  async function addCard(event: React.FormEvent) {
+  function openDialog(card: Card | "new") {
+    setEditing(card);
+    setError("");
+    setFront(card === "new" ? "" : card.front);
+    setBack(card === "new" ? "" : card.back);
+  }
+
+  async function saveCard(event: React.FormEvent) {
     event.preventDefault();
     setError("");
     try {
-      const card = await api.post<Card>(`/decks/${id}/cards`, { front, back });
-      setCards([...cards, card]);
-      setFront("");
-      setBack("");
-      setAdding(false);
+      if (editing === "new") {
+        // The server returns the same shape create and read both use, so the
+        // new card can go straight into the list without a reload.
+        const card = await api.post<Card>(`/decks/${id}/cards`, { front, back });
+        setCards([...cards, card]);
+      } else if (editing !== undefined) {
+        const card = await api.patch<Card>(`/cards/${editing.id}`, { front, back });
+        setCards(cards.map((existing) => (existing.id === card.id ? card : existing)));
+      }
+      setEditing(undefined);
     } catch (caught) {
       setError(messageOf(caught));
+    }
+  }
+
+  /**
+   * The card is soft-deleted on the server (migration 005) — its review history
+   * survives. Nothing in this UI can bring it back, which is why deleting takes
+   * two presses.
+   */
+  async function deleteCard(cardId: string) {
+    setError("");
+    try {
+      await api.del(`/cards/${cardId}`);
+      setCards(cards.filter((card) => card.id !== cardId));
+    } catch (caught) {
+      setError(messageOf(caught));
+    } finally {
+      setConfirming(undefined);
     }
   }
 
@@ -63,7 +98,7 @@ export function DeckPage() {
           </p>
         </div>
         <span style={{ display: "flex", gap: ".5rem" }}>
-          <button onClick={() => { setAdding(true); setError(""); }}>Add card</button>
+          <button onClick={() => openDialog("new")}>Add card</button>
           {due > 0 && (
             <Link to={`/decks/${id}/review`}>
               <button className="primary">Review {due}</button>
@@ -96,14 +131,33 @@ export function DeckPage() {
                 : `${card.repetitions} in a row · ease ${card.ease.toFixed(2)} · every ${card.intervalDays} day${card.intervalDays === 1 ? "" : "s"}`}
               {card.due === true ? "" : ` · next on ${card.dueOn}`}
             </div>
+            {/* Inside the <details>, so browsing a deck cannot delete anything
+                by a mis-click — you have to open the card first. */}
+            <div className="card-actions">
+              <button onClick={() => openDialog(card)}>Edit</button>
+              {confirming === card.id ? (
+                <>
+                  <button className="danger" onClick={() => void deleteCard(card.id)}>
+                    Really delete
+                  </button>
+                  <button onClick={() => setConfirming(undefined)}>Cancel</button>
+                </>
+              ) : (
+                <button onClick={() => setConfirming(card.id)}>Delete</button>
+              )}
+            </div>
           </details>
         ))}
       </div>
 
-      {error !== "" && !adding && <p className="error" role="alert">{error}</p>}
+      {error !== "" && editing === undefined && <p className="error" role="alert">{error}</p>}
 
-      <Dialog open={adding} title="New card" onClose={() => setAdding(false)}>
-        <form onSubmit={(event) => void addCard(event)}>
+      <Dialog
+        open={editing !== undefined}
+        title={editing === "new" ? "New card" : "Edit card"}
+        onClose={() => setEditing(undefined)}
+      >
+        <form onSubmit={(event) => void saveCard(event)}>
           <label>
             <span>Front — the question</span>
             <input name="front" value={front} required autoFocus
@@ -116,8 +170,10 @@ export function DeckPage() {
           </label>
           {error !== "" && <p className="error" role="alert">{error}</p>}
           <div className="dialog-actions">
-            <button type="button" onClick={() => setAdding(false)}>Cancel</button>
-            <button type="submit" className="primary">Add card</button>
+            <button type="button" onClick={() => setEditing(undefined)}>Cancel</button>
+            <button type="submit" className="primary">
+              {editing === "new" ? "Add card" : "Save changes"}
+            </button>
           </div>
         </form>
       </Dialog>

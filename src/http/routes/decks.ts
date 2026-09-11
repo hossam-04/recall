@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { currentUser } from "../auth.js";
+import { CARD_IS_LIVE } from "../../db/sql.js";
 import { parseBody } from "../server.js";
 
 /**
@@ -29,7 +30,7 @@ const DECK_COLUMNS = `
   select d.id, d.name, d.created_at as "createdAt",
          count(c.id)::int as "cardCount",
          (count(c.id) filter (where c.due_on <= current_date))::int as "dueCount"
-    from decks d left join cards c on c.deck_id = d.id`;
+    from decks d left join cards c on c.deck_id = d.id and ${CARD_IS_LIVE}`;
 
 export async function decksOf(pool: Pool, userId: string): Promise<Deck[]> {
   const { rows } = await pool.query<Deck>(
@@ -58,7 +59,7 @@ export async function requireOwnedDeck(
     `select d.id, d.name, d.created_at as "createdAt", d.user_id as "ownerId",
             count(c.id)::int as "cardCount",
             (count(c.id) filter (where c.due_on <= current_date))::int as "dueCount"
-       from decks d left join cards c on c.deck_id = d.id
+       from decks d left join cards c on c.deck_id = d.id and ${CARD_IS_LIVE}
       where d.id = $1
       group by d.id`,
     [deckId],

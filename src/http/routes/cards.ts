@@ -4,6 +4,7 @@ import { z } from "zod";
 import { currentUser } from "../auth.js";
 import { parseBody } from "../server.js";
 import { requireOwnedDeck } from "./decks.js";
+import { CARD_IS_LIVE } from "../../db/sql.js";
 import { review } from "../../scheduler/sm2.js";
 import { toDateString, addDays } from "../../scheduler/calendar.js";
 
@@ -12,6 +13,24 @@ const CreateCard = z.object({
   back: z.string().trim().min(1).max(4000),
 });
 const SubmitReview = z.object({ grade: z.enum(["again", "hard", "good", "easy"]) });
+
+/**
+ * An edit replaces text only. `z.object` strips everything else, so a client
+ * sending `ease` or `dueOn` cannot reschedule a card by editing it — the
+ * scheduler owns those columns and nothing else may write them.
+ *
+ * Both fields optional, at least one required: a PATCH with an empty body is a
+ * request that means nothing, and answering 200 to it hides a broken client.
+ */
+const EditCard = z
+  .object({
+    front: z.string().trim().min(1).max(1000).optional(),
+    back: z.string().trim().min(1).max(4000).optional(),
+  })
+  .refine((b) => b.front !== undefined || b.back !== undefined, {
+    message: "Provide front, back, or both",
+  });
+
 
 /**
  * One shape for a card, used by create and by both listings. A create that
@@ -53,9 +72,9 @@ export function registerCardRoutes(app: FastifyInstance, pool: Pool): void {
     if ((await requireOwnedDeck(pool, request.params.id, userId, reply)) === undefined) return;
 
     const { rows } = await pool.query<CardRow>(
-      `select id, front, back, repetitions, interval_days as "intervalDays",
-              ease, due_on::text as "dueOn", (due_on <= current_date) as due
-         from cards where deck_id = $1 order by id`,
+      `select c.id, c.front, c.back, c.repetitions, c.interval_days as "intervalDays",
+              c.ease, c.due_on::text as "dueOn", (c.due_on <= current_date) as due
+         from cards c where c.deck_id = $1 and ${CARD_IS_LIVE} order by c.id`,
       [request.params.id],
     );
     return rows;
@@ -71,6 +90,7 @@ export function registerCardRoutes(app: FastifyInstance, pool: Pool): void {
               c.ease, c.due_on::text as "dueOn"
          from cards c join decks d on d.id = c.deck_id
         where d.id = $1 and d.user_id = $2 and c.due_on <= current_date
+          and ${CARD_IS_LIVE}
         order by c.id`,
       [request.params.id, userId],
     );
@@ -92,7 +112,7 @@ export function registerCardRoutes(app: FastifyInstance, pool: Pool): void {
       const { rows } = await client.query<CardRow>(
         `select c.id, c.repetitions, c.interval_days as "intervalDays", c.ease
            from cards c join decks d on d.id = c.deck_id
-          where c.id = $1 and d.user_id = $2
+          where c.id = $1 and d.user_id = $2 and ${CARD_IS_LIVE}
           for update of c`,
         [request.params.id, userId],
       );
@@ -129,5 +149,59 @@ export function registerCardRoutes(app: FastifyInstance, pool: Pool): void {
     } finally {
       client.release();
     }
+  });
+
+  /**
+   * Editing returns the whole card, not just the changed fields, for the same
+   * reason create does: a client that merges a partial response ends up with a
+   * mixture of old and new, and the mismatch is invisible until it matters.
+   *
+   * `coalesce($n, column)` means an omitted field keeps its current value —
+   * the alternative is reading the row, merging in JavaScript and writing it
+   * back, which is two statements and a lost-update race for no gain.
+   */
+  app.patch<{ Params: { id: string } }>("/cards/:id", async (request, reply) => {
+    const userId = currentUser(request);
+    const body = parseBody(EditCard, request.body, reply);
+    if (body === undefined) return;
+
+    // The join to decks is the authorisation, in the statement rather than in a
+    // separate check: a card in someone else's deck matches no row, so the
+    // update affects nothing. 404 rather than 403, matching the grading route —
+    // deck routes answer 403 because the deck id is the thing being addressed.
+    const { rows } = await pool.query<CardRow>(
+      `update cards c
+          set front = coalesce($3, c.front), back = coalesce($4, c.back)
+         from decks d
+        where d.id = c.deck_id and c.id = $1 and d.user_id = $2 and ${CARD_IS_LIVE}
+       returning c.id, c.front, c.back, c.repetitions,
+                 c.interval_days as "intervalDays", c.ease,
+                 c.due_on::text as "dueOn", (c.due_on <= current_date) as due`,
+      [request.params.id, userId, body.front ?? null, body.back ?? null],
+    );
+
+    const card = rows[0];
+    if (card === undefined) return await reply.status(404).send({ error: "No such card" });
+    return card;
+  });
+
+  /**
+   * Soft delete (migration 005). The row stays so its reviews stay; every read
+   * filters it out. Deleting an already-deleted card is a 404 rather than a
+   * second 204 — the effect is idempotent either way, and 404 is the more
+   * informative answer to a client that thinks it still has the card.
+   */
+  app.delete<{ Params: { id: string } }>("/cards/:id", async (request, reply) => {
+    const userId = currentUser(request);
+
+    const { rowCount } = await pool.query(
+      `update cards c set deleted_at = now()
+         from decks d
+        where d.id = c.deck_id and c.id = $1 and d.user_id = $2 and ${CARD_IS_LIVE}`,
+      [request.params.id, userId],
+    );
+
+    if (rowCount === 0) return await reply.status(404).send({ error: "No such card" });
+    return await reply.status(204).send();
   });
 }

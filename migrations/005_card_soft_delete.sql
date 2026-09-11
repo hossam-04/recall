@@ -1,0 +1,23 @@
+-- Cards can be deleted, but their review history cannot.
+--
+-- Migration 002 set `reviews.card_id ... on delete restrict` and said the real
+-- choice would be made once a delete button existed. It does now, and this is
+-- that choice: the row stays, marked dead, and every read filters it out.
+--
+-- Rejected: hard delete with `on delete cascade` on reviews. It makes the
+-- delete button work at the cost of destroying the only record that the card
+-- was ever studied — and the cards most likely to be deleted are the bad ones,
+-- whose history is exactly what a stats page and FSRS fitting need.
+--
+-- Rejected: refuse to delete any card that has been reviewed. Honest, and the
+-- cheapest option, but it means the delete button works on new cards and fails
+-- on the ones you actually want gone.
+--
+-- The cost, stated plainly: every query that touches cards now needs
+-- `deleted_at is null`, and forgetting it is silent. Postgres cannot catch a
+-- missing where clause. A test enumerating the card-returning routes can.
+alter table cards add column deleted_at timestamptz;
+
+-- No partial index yet. The existing (deck_id, due_on) index still serves every
+-- query; making it partial is a tuning decision, and tuning decisions get made
+-- with a query plan in hand, not in advance.
