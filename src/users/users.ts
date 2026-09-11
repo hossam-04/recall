@@ -69,6 +69,20 @@ export async function findById(pool: Pool, id: string): Promise<User | undefined
   return rows[0];
 }
 
+/**
+ * The hash alone, for re-confirming a password someone already signed in with.
+ * Separate from `findById` so the ordinary "who am I" path cannot accidentally
+ * serialise a hash into a response — the type system stops it rather than a
+ * reviewer noticing.
+ */
+export async function passwordHashOf(pool: Pool, id: string): Promise<string | undefined> {
+  const { rows } = await pool.query<{ passwordHash: string }>(
+    'select password_hash as "passwordHash" from users where id = $1',
+    [id],
+  );
+  return rows[0]?.passwordHash;
+}
+
 export async function findByEmail(
   pool: Pool,
   email: string,

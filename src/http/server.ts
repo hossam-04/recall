@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import type { Pool } from "pg";
 import { registerAuthentication } from "./auth.js";
+import { LIMITS, type Limit } from "./rate-limit.js";
 import { registerCardRoutes } from "./routes/cards.js";
 import { registerDeckRoutes } from "./routes/decks.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
@@ -37,7 +38,15 @@ declare module "fastify" {
   }
 }
 
-export function buildServer(pool: Pool): FastifyInstance {
+/**
+ * Limits are a parameter with a default rather than read from the environment
+ * here, so a test can build a server that refuses on the third attempt instead
+ * of the sixtieth — and so the real numbers live in one place.
+ */
+export function buildServer(
+  pool: Pool,
+  limits: { auth: Limit; account: Limit } = LIMITS,
+): FastifyInstance {
   const app = Fastify({ logger: false });
 
   const routeTable: RouteEntry[] = [];
@@ -70,7 +79,7 @@ export function buildServer(pool: Pool): FastifyInstance {
 
   // Registered before any route: authentication is a property of the server,
   // not something each route opts into.
-  registerAuthentication(app, pool);
+  registerAuthentication(app, pool, limits);
 
   /**
    * Everything the browser calls lives under /api, so the root path space

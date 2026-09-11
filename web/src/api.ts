@@ -67,7 +67,7 @@ export const api = {
   get: <T,>(path: string) => request<T>("GET", path),
   post: <T,>(path: string, body?: unknown) => request<T>("POST", path, body),
   patch: <T,>(path: string, body?: unknown) => request<T>("PATCH", path, body),
-  del: <T,>(path: string) => request<T>("DELETE", path),
+  del: <T,>(path: string, body?: unknown) => request<T>("DELETE", path, body),
 };
 
 export type User = { id: string; email: string };

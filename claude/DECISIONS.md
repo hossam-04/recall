@@ -989,3 +989,95 @@ stand: `decks → cards` is `on delete cascade` and `cards → reviews` is `on
 delete restrict`, so Postgres refuses a deck delete the moment any of its cards
 has been reviewed. The same soft-delete answer probably applies, but the column
 is not being added speculatively.
+
+## ADR-030 — Closing an account destroys the review history
+
+**Decision.** `DELETE /api/me`, re-confirming the password. It deletes the
+review rows explicitly, then the user row, inside one transaction. Sessions,
+decks and cards follow by cascade.
+
+**Why this is not the same question ADR-029 answered.** There, a deleted card
+keeps its reviews because *you* still want them — for a stats page, or to fit a
+scheduler on your own history. Deleting your account says there is no future you
+to want them. The reason for keeping the rows evaporates, and what is left is
+retained data about someone who asked to be gone.
+
+**Why the delete is written out by hand.** `reviews.card_id` is `on delete
+restrict`, so `delete from users` fails the moment any card has ever been
+reviewed, however many cascade hops away it is. The obvious fix — change that
+constraint to `on delete cascade` — would also make *card* deletion silently
+destroy history, which is exactly what ADR-029 rejected. One FK cannot express
+two different answers, so the constraint keeps the strict one and the deliberate
+operation states its own order. That is the right division: restrict exists to
+stop accidents, and this is not an accident.
+
+**The subtlety worth naming.** The reviews delete must *not* use `CARD_IS_LIVE`.
+Soft-deleted cards still own review rows; skipping them leaves behind precisely
+the rows that make the next statement fail, and the whole transaction rolls
+back. A filter that is right in five places is wrong in the sixth, which is the
+cost ADR-029 accepted, arriving on schedule.
+
+**The password is re-verified** rather than trusting the session cookie. A
+session is enough authority to add a card; it is not enough for an irreversible
+destruction of everything. CSRF tokens do not help here at all — a borrowed
+laptop with a signed-in tab makes a perfectly legitimate same-origin request.
+
+**Alternatives.** *Anonymise instead of delete* — keep the reviews, detach them
+from the user. Rejected: `reviews.card_id` is `not null` and cards belong to
+decks which belong to a user, so anonymising means keeping the whole tree and
+merely unlinking the top, which is not anonymity. *Soft-delete the user* —
+rejected for the same reason as anonymising, plus it would put a `deleted_at`
+filter on the authentication path, which is the last place to want one.
+
+## ADR-031 — Rate limiting is a token bucket, keyed twice
+
+**Decision.** An in-memory token bucket in `src/http/rate-limit.ts`, applied to
+the two routes that accept a password. Two keys: one per IP address, spent in an
+`onRequest` hook, and one per email address, spent inside the login route.
+Refusals are 429 with `Retry-After`.
+
+**Measured, not assumed.** Argon2 is configured at 64 MiB per hash. The obvious
+story is memory exhaustion, and it is wrong: argon2 runs on the libuv
+threadpool, four threads by default, so peak RSS stays near 300 MiB no matter
+how many requests arrive — measured at 1, 4, 16 and 64 concurrent hashes. What
+is unbounded is the queue, and that threadpool is shared with file and DNS work,
+so roughly thirty logins a second from one client saturates password hashing for
+everyone and stalls unrelated I/O. Raising `UV_THREADPOOL_SIZE` to sixteen does
+push RSS past a gigabyte, so the memory story is real only for someone who tunes
+that. The limit is set against the queue, which is the thing that actually
+breaks.
+
+**Token bucket, not a fixed window.** A fixed window is fewer lines and lets
+through twice the limit across a boundary — the whole allowance in the last
+second of one window, the whole allowance again in the first second of the next.
+A bucket refills continuously, so the long-run rate is the limit and the only
+burst is the capacity you chose.
+
+**Two keys, because either alone fails.** Per-IP is defeated by anyone with more
+than one address; a single IPv6 allocation is enough. Per-email is defeated by
+an attacker who never repeats an email, and taken alone it also lets anyone lock
+any account out by naming it. Each covers the other's blind spot.
+
+**Charged before the password is checked.** Otherwise an attacker who happens to
+guess correctly after the allowance runs out is let in — throttled the whole way
+and then rewarded.
+
+**In memory, not in Postgres.** Rejected a table because it costs a write per
+request and this is one process on localhost, where a restart clearing the
+counters is not a threat anyone is defending against. **Would switch** the
+moment this runs more than one instance: per-process counters silently multiply
+the real limit by the number of processes.
+
+**Two bugs this had, both found by tests rather than by reading.**
+
+*The sweep compared stale numbers.* Tokens refill on read, so a bucket's stored
+count is out of date by exactly as long as the key has been idle — and idle is
+what the sweep is looking for. Comparing the stored value found nothing to drop,
+ever. The eviction test caught it.
+
+*The per-email limit was untested while looking tested.* Both limits were set to
+three, and `inject` presents one address, so the per-IP counter always ran out
+first — every assertion about the per-email limit was in fact exercising the
+per-IP one. Deleting the per-email check entirely left the file green. The two
+limits are now tested apart, with the other one set wide. That is the sixth test
+in this project found to be measuring nothing, and the fifth found by sabotage.

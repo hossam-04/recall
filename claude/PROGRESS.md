@@ -14,9 +14,9 @@ card edit/delete is the first and is done.
 ```
 $ npm run verify
 tsc --noEmit (both tsconfigs)  → clean
-vitest run                     → 14 files, 87 tests
-./scripts/api-smoke.sh         → 34 assertions, all good
-playwright test                → 6 specs, real Chromium
+vitest run                     → 16 files, 104 tests
+./scripts/api-smoke.sh         → 42 assertions, all good
+playwright test                → 8 specs, real Chromium
 $ echo $?
 0                                          (~20 seconds)
 ```
@@ -44,6 +44,7 @@ src/db/migrate.ts           transactional, checksummed migration runner
 src/db/pool.ts              lazy singleton pool
 src/http/server.ts          buildServer(pool), error handler, parseBody, routeTable
 src/http/auth.ts            default-deny authentication + CSRF, PUBLIC_ROUTES
+src/http/rate-limit.ts      token bucket, keyed per address and per account
 src/http/cookies.ts         hand-rolled HttpOnly / SameSite / Secure
 src/http/routes/            users, sessions, decks, cards — all under /api
 src/users, src/sessions     argon2 hashing, CSPRNG session + CSRF tokens
@@ -53,6 +54,7 @@ migrations/001–005          users, sessions, decks, cards, reviews, csrf, dele
 scripts/api-smoke.sh        the M2 bar, real socket, real curl
 e2e/review.spec.ts          the M3 bar, real Chromium
 e2e/edit-delete.spec.ts     two-press delete and the first PATCH the UI sends
+e2e/account.spec.ts         closing an account, and a wrong password not doing so
 ```
 
 **Five migrations, six tables.** Verified this session against a fresh empty
@@ -61,7 +63,7 @@ sessions, users`.
 
 ## Decisions that shape everything after them
 
-29 ADRs in `claude/DECISIONS.md`. The load-bearing ones:
+31 ADRs in `claude/DECISIONS.md`. The load-bearing ones:
 
 - **ADR-005** due dates are stored, not recomputed — changing a constant must
   not retroactively move cards already scheduled
@@ -118,8 +120,8 @@ passed:
 
 ## Known gaps, recorded not fixed
 
-- **Account deletion is impossible.** ADR-011's restrict propagates up every
-  cascade path. Decided at M3; still open.
+- ~~Account deletion is impossible.~~ **Fixed** — ADR-030. The restrict stays;
+  the deletion writes its own order inside a transaction.
 - **`saveDeck`'s successor doesn't exist** — there is no file persistence at all
   now, which is fine, but note nothing `fsync`s anything; durability is
   Postgres's problem and Postgres does it.
@@ -137,8 +139,8 @@ Claude subscription does not fund API calls; they are separately metered. So M4
 and M5 wait, and these were chosen instead. All four were picked; this is the
 order they run in.
 
-1. **Deferred decisions.** Card edit and delete — **done**, ADR-029. Still to
-   do: account deletion (currently impossible, see above) and rate limiting.
+1. ~~**Deferred decisions.**~~ **Done.** Card edit and delete (ADR-029),
+   account deletion (ADR-030), rate limiting (ADR-031).
 2. **Stats page.** Reads the review log. This is the first thing that has ever
    read `reviews`, which until now had one writer and zero readers.
 3. **The replay audit ADR-010 promised and never delivered.** For every card,

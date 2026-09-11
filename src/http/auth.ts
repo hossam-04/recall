@@ -3,6 +3,7 @@ import type { Pool } from "pg";
 import { parseCookies } from "./cookies.js";
 import { findValidSession } from "../sessions/sessions.js";
 import { SESSION_COOKIE } from "./routes/sessions.js";
+import { type Limit, type Limiter, rateLimiter } from "./rate-limit.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -31,6 +32,39 @@ export function isPublic(method: string, url: string): boolean {
 }
 
 /**
+ * The routes worth throttling: the two that accept a password. Logging out is
+ * public too but costs nothing and cannot be guessed at.
+ *
+ * Everything else already requires a session, and issuing sessions is what this
+ * limit protects — so a global per-request limit would mostly throttle people
+ * who are already authenticated, which is the wrong target. Would add one if
+ * this ever faced the open internet, where a flood does not need to log in to
+ * cost you money.
+ */
+const THROTTLED_ROUTES = new Set(["POST /api/users", "POST /api/sessions"]);
+
+/** 429 with the one header a well-behaved client can actually act on. */
+export async function tooManyRequests(reply: FastifyReply, retryAfterSeconds: number) {
+  return await reply
+    .header("retry-after", String(retryAfterSeconds))
+    .status(429)
+    .send({ error: "Too many attempts. Try again shortly." });
+}
+
+declare module "fastify" {
+  interface FastifyInstance {
+    /**
+     * Per-email limiter for login. Hung on the server rather than kept as a
+     * module singleton so that each server owns its own counters: one process
+     * runs one server, so this changes nothing in production, but it means a
+     * test cannot inherit another test's spent allowance. The first version was
+     * a module-level const and would have leaked across the whole suite.
+     */
+    accountLimiter: Limiter;
+  }
+}
+
+/**
  * Methods that change state. GET and HEAD are exempt from the CSRF check
  * because a GET is not supposed to change anything — which is a promise our own
  * routes have to keep. A GET that deletes something is a CSRF hole no token
@@ -49,7 +83,32 @@ export const CSRF_HEADER = "x-csrf-token";
  * cross-user test in `tests/http/authorization.test.ts` checks every route for
  * it rather than trusting each one to have remembered.
  */
-export function registerAuthentication(app: FastifyInstance, pool: Pool): void {
+export function registerAuthentication(app: FastifyInstance, pool: Pool, limits: {
+  auth: Limit;
+  account: Limit;
+}): void {
+  app.decorate("accountLimiter", rateLimiter(limits.account));
+
+  /**
+   * Per-IP, and on `onRequest` rather than `preHandler` — the point is to
+   * refuse before the work starts. By preHandler the body is already parsed;
+   * by the handler we would be spending 50ms of argon2 per guess, and the real
+   * cost of an unthrottled login is not memory but the shared libuv threadpool
+   * that argon2, file reads and DNS all queue on.
+   *
+   * `request.ip` comes from the socket. X-Forwarded-For is deliberately not
+   * trusted: a header the client writes is a rate limit the client chooses.
+   */
+  const ipLimiter = rateLimiter(limits.auth);
+
+  app.addHook("onRequest", async (request: FastifyRequest, reply: FastifyReply) => {
+    const route = request.routeOptions.url;
+    if (route === undefined || !THROTTLED_ROUTES.has(`${request.method} ${route}`)) return;
+
+    const decision = ipLimiter.take(`ip:${request.ip}`);
+    if (!decision.ok) return await tooManyRequests(reply, decision.retryAfterSeconds);
+  });
+
   app.addHook("preHandler", async (request: FastifyRequest, reply: FastifyReply) => {
     const route = request.routeOptions.url;
     if (route === undefined || isPublic(request.method, route)) return;

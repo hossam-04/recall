@@ -5,6 +5,7 @@ import { expiredCookie, parseCookies, serializeCookie } from "../cookies.js";
 import { createSession, deleteSession } from "../../sessions/sessions.js";
 import { findByEmail, hashPassword, verifyPassword } from "../../users/users.js";
 import { parseBody } from "../server.js";
+import { tooManyRequests } from "../auth.js";
 
 export const SESSION_COOKIE = "recall_session";
 export const CSRF_COOKIE = "recall_csrf";
@@ -24,6 +25,14 @@ export function registerSessionRoutes(app: FastifyInstance, pool: Pool): void {
   app.post("/sessions", async (request, reply) => {
     const body = parseBody(Login, request.body, reply);
     if (body === undefined) return;
+
+    // The second key, and the one a per-IP limit cannot replace: ten thousand
+    // addresses guessing one person's password trip no per-IP counter, but they
+    // all land on this key. Spent only after the body parses, because the email
+    // does not exist before then — which does mean a malformed body is not
+    // charged here. It is still charged to the IP by the onRequest hook.
+    const attempt = request.server.accountLimiter.take(`email:${body.email}`);
+    if (!attempt.ok) return await tooManyRequests(reply, attempt.retryAfterSeconds);
 
     const user = await findByEmail(pool, body.email);
 

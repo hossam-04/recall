@@ -42,7 +42,10 @@ echo "recall api smoke test"
 dropdb --if-exists "$(basename "$DB")" 2>/dev/null || true
 createdb "$(basename "$DB")"
 
-DATABASE_URL="$DB" PORT="$PORT" npm run start --silent >/tmp/smoke-server.log 2>&1 &
+# Rate limits are set low on purpose. The real defaults would need sixty
+# requests to prove a 429, and a test that slow stops being run.
+DATABASE_URL="$DB" PORT="$PORT" RATE_LIMIT_AUTH=20 RATE_LIMIT_ACCOUNT=3 \
+  npm run start --silent >/tmp/smoke-server.log 2>&1 &
 SERVER_PID=$!
 
 for _ in $(seq 1 50); do
@@ -121,5 +124,35 @@ expect 200 "bob's own deck list is empty" -b "$JAR_B" "$BASE/api/decks"
 
 expect 204 "alice logs out" -X DELETE -b "$JAR_A" "$BASE/api/sessions"
 expect 401 "her cookie stops working" -b "$JAR_A" "$BASE/api/decks"
+
+# --- rate limiting (ADR-031) -------------------------------------------------
+# Last in the file: these deliberately exhaust an allowance, and the per-address
+# counter is shared with everything above.
+guess() { curl -sS -o /tmp/smoke-body -D /tmp/smoke-head -w '%{http_code}' \
+  -X POST "${json[@]}" -d "{\"email\":\"$1\",\"password\":\"wrong-password-here\"}" \
+  "$BASE/api/sessions"; }
+
+for i in 1 2 3; do
+  [ "$(guess carol@example.com)" = "401" ] && pass "guess $i at carol is answered 401" \
+    || fail "guess $i was not 401"
+done
+[ "$(guess carol@example.com)" = "429" ] && pass "the fourth guess at one account is refused" \
+  || fail "the per-account limit never bit"
+grep -qi '^retry-after: [1-9]' /tmp/smoke-head && pass "and it says when to come back" \
+  || fail "no usable Retry-After header: $(grep -i retry /tmp/smoke-head)"
+
+# A different account from the same address still works, so what refused carol
+# was her email and not the address.
+[ "$(guess dave@example.com)" = "401" ] && pass "another account is unaffected" \
+  || fail "the per-account limit locked out an unrelated account"
+
+# Now the address limit. Every email here is new, so the per-account limiter
+# cannot be what answers — its counter for each is untouched.
+TRIPPED=""
+for i in $(seq 1 30); do
+  [ "$(guess "burst$i@example.com")" = "429" ] && { TRIPPED=$i; break; }
+done
+[ -n "$TRIPPED" ] && pass "a burst of distinct accounts is refused after $TRIPPED from one address" \
+  || fail "the per-address limit never bit in 30 attempts"
 
 echo; echo "  all good"
