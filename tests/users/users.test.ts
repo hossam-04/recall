@@ -2,7 +2,8 @@ import { describe, expect, test } from "vitest";
 import {
   EmailAlreadyRegistered,
   createUser,
-  findByEmail,
+  UsernameAlreadyTaken,
+  findByIdentifier,
   hashPassword,
   verifyPassword,
 } from "../../src/users/users.js";
@@ -43,26 +44,39 @@ describe("password hashing", () => {
 
 describe("the user store", () => {
   test("creates a user and never returns the hash", async () => {
-    const user = await createUser(testPool(), "a@x.com", "a-good-password");
+    const user = await createUser(testPool(), "a@x.com", "ann", "a-good-password");
 
-    expect(user).toEqual({ id: "1", email: "a@x.com", maximumIntervalDays: 36_500 });
+    // Exactly, not toMatchObject. This is what stops the hash being serialised
+    // one day by a `select *` — a new column breaks it the day it is added.
+    expect(user).toEqual({
+      id: "1", email: "a@x.com", username: "ann", maximumIntervalDays: 36_500,
+    });
     expect(JSON.stringify(user)).not.toContain("argon2");
   });
 
-  test("a duplicate email is a typed error, not a raw driver error", async () => {
-    await createUser(testPool(), "a@x.com", "password-one");
-    await expect(createUser(testPool(), "a@x.com", "password-two")).rejects.toBeInstanceOf(
-      EmailAlreadyRegistered,
-    );
+  test("tells the two unique constraints apart", async () => {
+    await createUser(testPool(), "a@x.com", "ann", "password-one");
+
+    // Same email, free handle.
+    await expect(createUser(testPool(), "a@x.com", "bea", "password-two"))
+      .rejects.toBeInstanceOf(EmailAlreadyRegistered);
+    // Free email, same handle. Reading the code alone would not tell you which
+    // constraint Postgres reports when both collide, so the store reads the
+    // constraint name rather than guessing from the input.
+    await expect(createUser(testPool(), "b@x.com", "ann", "password-two"))
+      .rejects.toBeInstanceOf(UsernameAlreadyTaken);
   });
 
-  test("finds a user by email, and returns nothing for a stranger", async () => {
-    await createUser(testPool(), "a@x.com", "a-good-password");
+  test("finds a user by either identifier, and nothing for a stranger", async () => {
+    await createUser(testPool(), "a@x.com", "ann", "a-good-password");
 
-    const found = await findByEmail(testPool(), "a@x.com");
-    expect(found?.email).toBe("a@x.com");
-    expect(await verifyPassword(found?.passwordHash ?? "", "a-good-password")).toBe(true);
+    for (const identifier of ["a@x.com", "ann"]) {
+      const found = await findByIdentifier(testPool(), identifier);
+      expect(found?.email, identifier).toBe("a@x.com");
+      expect(await verifyPassword(found?.passwordHash ?? "", "a-good-password")).toBe(true);
+    }
 
-    expect(await findByEmail(testPool(), "nobody@x.com")).toBeUndefined();
+    expect(await findByIdentifier(testPool(), "nobody@x.com")).toBeUndefined();
+    expect(await findByIdentifier(testPool(), "nobody")).toBeUndefined();
   });
 });

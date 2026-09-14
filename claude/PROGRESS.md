@@ -16,8 +16,8 @@ that does not touch the authorisation model.
 ```
 $ npm run verify
 tsc --noEmit (both tsconfigs)  → clean
-vitest run                     → 25 files, 159 tests
-./scripts/api-smoke.sh         → 75 assertions, all good
+vitest run                     → 26 files, 172 tests
+./scripts/api-smoke.sh         → 79 assertions, all good
 playwright test                → 17 specs, real Chromium
 $ echo $?
 0                                          (~35 seconds)
@@ -58,8 +58,8 @@ src/users, src/sessions     argon2 hashing, CSPRNG session + CSRF tokens
 web/src/                    React 19 + react-router, Vite proxies /api
 src/db/sql.ts               CARD_IS_LIVE — shared by two modules, cycle-free
 web/src/theme.ts            system / light / dark, an attribute on <html>
-migrations/001–009          users, sessions, decks, cards, reviews, csrf,
-                            deleted_at, imported source, interval cap
+migrations/001–010          users, sessions, decks, cards, reviews, csrf,
+                            deleted_at, imported source, interval cap, usernames
 scripts/api-smoke.sh        the M2 bar, real socket, real curl
 e2e/review.spec.ts          the M3 bar, real Chromium
 e2e/edit-delete.spec.ts     two-press delete and the first PATCH the UI sends
@@ -67,13 +67,13 @@ e2e/account.spec.ts         closing an account, and a wrong password not doing s
 e2e/stats.spec.ts           the numbers a real review session produces
 ```
 
-**Nine migrations, six tables.** Verified against a fresh empty database every
+**Ten migrations, six tables.** Verified against a fresh empty database every
 test run: all nine apply and produce `cards, decks, reviews, schema_migrations,
 sessions, users`.
 
 ## Decisions that shape everything after them
 
-39 ADRs in `claude/DECISIONS.md`. The load-bearing ones:
+40 ADRs in `claude/DECISIONS.md`. The load-bearing ones:
 
 - **ADR-005** due dates are stored, not recomputed — changing a constant must
   not retroactively move cards already scheduled
@@ -243,7 +243,11 @@ order they run in.
 `prefers-color-scheme`, so the work was an *override*, and `nextInterval` had
 always taken a `maximumInterval` parameter nobody passed.
 
-**Public profiles — designed, not built.** Usernames, user search, public and
+**Public profiles — phase 1 of 3 done.** Usernames exist, registration takes
+one, and login accepts either identifier (ADR-040). No profile page yet: phase 2
+is visibility, preview and copy; phase 3 is stars, search and the heatmap.
+
+**Public profiles — the design.** Usernames, user search, public and
 private decks, stars, and copying someone else's public deck. Seven features
 asked for as "more like GitHub"; five of them are one subsystem. The design is
 settled — preview-then-copy, login by either email or username, a contribution

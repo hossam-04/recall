@@ -64,7 +64,9 @@ describe("GET /api/me", () => {
   test("answers with the signed-in user", async () => {
     const response = await app.inject({ method: "GET", url: "/api/me", ...as() });
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ id: "1", email: "alice@x.com", maximumIntervalDays: 36_500 });
+    expect(response.json()).toEqual({
+      id: "1", email: "alice@x.com", username: "alice-x-com", maximumIntervalDays: 36_500,
+    });
   });
 
   test("is 401 once the session is revoked", async () => {

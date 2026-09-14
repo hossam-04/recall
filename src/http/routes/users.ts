@@ -2,7 +2,8 @@ import type { FastifyInstance } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
 import {
-  EmailAlreadyRegistered, type User, createUser, findById, passwordHashOf, verifyPassword,
+  EmailAlreadyRegistered, USER_COLUMNS, UsernameAlreadyTaken, type User,
+  createUser, findById, passwordHashOf, verifyPassword,
 } from "../../users/users.js";
 import { currentUser } from "../auth.js";
 import { parseBody } from "../server.js";
@@ -20,8 +21,25 @@ import { CSRF_COOKIE, SESSION_COOKIE } from "./sessions.js";
  * and measurably reduce entropy. The ceiling is not a security rule; it stops
  * someone posting a megabyte of text for us to hash.
  */
+/**
+ * The handle's shape is migration 010's regex, restated. The column is the
+ * authority and covers every write path; this exists so a bad handle is a 400
+ * naming the field rather than a 500 from a raised check constraint.
+ *
+ * Lowercased rather than rejected, for the same reason the email is: `Alice`
+ * should become `alice`, not be told her name is invalid.
+ */
+export const USERNAME = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/, {
+    message: "1 to 32 characters: letters, digits and inner hyphens",
+  });
+
 const Registration = z.object({
   email: z.email().toLowerCase(),
+  username: USERNAME,
   password: z.string().min(8).max(256),
 });
 
@@ -70,8 +88,11 @@ export function registerUserRoutes(app: FastifyInstance, pool: Pool): void {
     if (body === undefined) return;
 
     const { rows } = await pool.query<User>(
+      // USER_COLUMNS, not a second spelling of it: this route had its own
+      // `returning` list for one commit, and adding `username` to the type left
+      // it silently returning a user without one.
       `update users set maximum_interval_days = $2 where id = $1
-       returning id, email, maximum_interval_days as "maximumIntervalDays"`,
+       returning ${USER_COLUMNS}`,
       [currentUser(request), body.maximumIntervalDays],
     );
     const user = rows[0];
@@ -84,7 +105,7 @@ export function registerUserRoutes(app: FastifyInstance, pool: Pool): void {
     if (body === undefined) return;
 
     try {
-      const user = await createUser(pool, body.email, body.password);
+      const user = await createUser(pool, body.email, body.username, body.password);
       return await reply.status(201).send(user);
     } catch (error) {
       if (error instanceof EmailAlreadyRegistered) {
@@ -93,6 +114,12 @@ export function registerUserRoutes(app: FastifyInstance, pool: Pool): void {
         // deliberately for registration, where a real user has to be told.
         // Login must not leak the same thing; see ADR-014.
         return await reply.status(409).send({ error: "Email already registered" });
+      }
+      if (error instanceof UsernameAlreadyTaken) {
+        // No hesitation here at all: a username is public by design — /u/alice
+        // is a URL anyone can type — so there is nothing left for vagueness to
+        // protect, and a person picking a name has to be told it is gone.
+        return await reply.status(409).send({ error: "Username already taken" });
       }
       throw error;
     }

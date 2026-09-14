@@ -1561,3 +1561,76 @@ The fix was the signature, not the call site: everything after `stability` is no
 named. The mistake is no longer writeable. Four call sites updated, and the
 differential test against `ts-fsrs` still passes, which is what says the
 refactor changed shape and not behaviour.
+
+## ADR-040 — Usernames, and why login now resolves before it throttles
+
+**Decision.** `users.username`: lowercase, shape-checked, unique. Registration
+requires one. `POST /api/sessions` takes a single `identifier` matched against
+either column. Phase 1 of the public-profiles design
+(`docs/superpowers/specs/2026-09-15-public-profiles-design.md`).
+
+**The column copies migration 001's email pattern exactly** — store lowercase,
+enforce it with a check, plain `unique`. That combination buys case-insensitive
+uniqueness with no extension, no `citext` and no functional index, and it is
+what makes the login lookup possible as a plain equality against two indexed
+columns. `lower(username) = $1` would have made both indexes unusable.
+
+**The backfill derives from `id`, not from the email.** `user<id>` is ugly and
+it is the only safe choice: `id` is already unique and already non-null, so both
+the shape check and the unique constraint are satisfied by construction and no
+data already in the table can make the statement fail. That matters because the
+runner gives a migration exactly one attempt inside one transaction (ADR-008).
+The email local part reads better and can collide (`a@x.com`, `a@y.com`) or
+strip to an invalid shape (`.-.` → a leading hyphen), so it needs a
+dedupe-and-fallback pass that must be perfect on its only run — and the fallback
+is `user<id>` anyway.
+
+**No reserved-word list**, because profiles live at `/u/:username`. GitHub needs
+one only because handles sit at the root of its URL space. The prefix was chosen
+for this.
+
+**Two identifiers, one field.** The client should not have to decide which
+spelling was typed. Not validated as an email, because half the valid values are
+not emails; a malformed identifier simply fails the lookup and gets the same
+answer a wrong password gets.
+
+**A username collision is answered plainly, unlike an email one.** ADR-014
+weighed what admitting a taken email costs. Nothing of that survives here: a
+handle is public by design — `/u/alice` is a URL anyone can type — so vagueness
+would protect nothing and cost a person trying to pick a name.
+
+### The trap this ADR exists for
+
+ADR-031's second rate-limit bucket was keyed per email. Two identifiers reaching
+one account means that, keyed on **what was typed**, an attacker alternating
+`alice@x.com` and `alice` gets two full allowances against one password — and
+knowing both spellings is not privileged information, it is what a profile page
+shows.
+
+So the login route now **resolves the identifier before it spends a token**, and
+keys on the resolved account id. Unknown identifiers have no id and key on the
+typed string, which is correct rather than a fallback: guessing at accounts that
+do not exist still has to be bounded, and each distinct guess is its own target.
+
+The token is still charged before the password is verified, which is ADR-031's
+actual requirement. The lookup ahead of it is one indexed read; argon2 is the
+expensive part and it is still behind the limit.
+
+Covered by a vitest case that alternates the spellings and by a smoke assertion
+that does the same over a real socket. Keying on the raw identifier turns
+exactly one test red, which is what says the test is about this and not about
+something else.
+
+### Two failures worth keeping
+
+**A test failed while the schema was correct.** The username constraint tests
+built their email *from* the username, so `Hossam` produced `Hossam-…@x.com` and
+tripped `users_email_lowercase` before the username check was ever reached. The
+assertion names the constraint it expects — which is the only reason this was a
+puzzling failure rather than a silent pass against the wrong rule.
+
+**A flake that only existed in parallel.** The browser specs derived a handle
+from `Date.now()` plus a per-file counter. Counters restart per file, so two
+spec files registering in the same millisecond produced the same handle and one
+registration 409'd. It passed in isolation every time and failed roughly one run
+in three. Handles now carry random entropy.

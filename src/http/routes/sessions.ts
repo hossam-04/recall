@@ -3,7 +3,7 @@ import type { Pool } from "pg";
 import { z } from "zod";
 import { expiredCookie, parseCookies, serializeCookie } from "../cookies.js";
 import { createSession, deleteSession } from "../../sessions/sessions.js";
-import { findByEmail, hashPassword, verifyPassword } from "../../users/users.js";
+import { findByIdentifier, hashPassword, verifyPassword } from "../../users/users.js";
 import { parseBody } from "../server.js";
 import { tooManyRequests } from "../auth.js";
 
@@ -11,7 +11,18 @@ export const SESSION_COOKIE = "recall_session";
 export const CSRF_COOKIE = "recall_csrf";
 const LIFETIME_SECONDS = 30 * 24 * 60 * 60;
 
-const Login = z.object({ email: z.email().toLowerCase(), password: z.string().min(1) });
+/**
+ * One field, because either identifier works and the client should not have to
+ * decide which one was typed. Lowercased here so it can be compared against two
+ * columns that are both lowercase-enforced — see findByIdentifier.
+ *
+ * Not `z.email()`: half the valid values are not emails. The shape is checked
+ * by the lookup failing, which is the same answer a wrong password gets.
+ */
+const Login = z.object({
+  identifier: z.string().trim().toLowerCase().min(1).max(320),
+  password: z.string().min(1),
+});
 
 /**
  * A real argon2 hash of a throwaway password, verified against when the email
@@ -26,15 +37,29 @@ export function registerSessionRoutes(app: FastifyInstance, pool: Pool): void {
     const body = parseBody(Login, request.body, reply);
     if (body === undefined) return;
 
-    // The second key, and the one a per-IP limit cannot replace: ten thousand
-    // addresses guessing one person's password trip no per-IP counter, but they
-    // all land on this key. Spent only after the body parses, because the email
-    // does not exist before then — which does mean a malformed body is not
-    // charged here. It is still charged to the IP by the onRequest hook.
-    const attempt = request.server.accountLimiter.take(`email:${body.email}`);
-    if (!attempt.ok) return await tooManyRequests(reply, attempt.retryAfterSeconds);
+    // The lookup happens *before* the limiter, which is the opposite of the
+    // obvious order and the only thing that makes this limit real.
+    //
+    // Two identifiers now reach one account. Keyed on what was typed, an
+    // attacker alternating `alice@x.com` and `alice` gets two full allowances
+    // against one password — the limit doubles for anyone who knows both, which
+    // is anyone who has seen a profile page. Keyed on the resolved id, both
+    // spellings land on the same bucket.
+    //
+    // Unknown identifiers have no id, so they key on the typed string. That is
+    // correct rather than a fallback: guessing at accounts that do not exist
+    // still has to be bounded, and each distinct guess is its own target.
+    //
+    // This is still spent before the password is verified, which is ADR-031's
+    // actual requirement — a guess that happens to be right after the allowance
+    // runs out must not be rewarded. The lookup is one indexed read; argon2 is
+    // the expensive part and it is still behind the limit.
+    const user = await findByIdentifier(pool, body.identifier);
 
-    const user = await findByEmail(pool, body.email);
+    const attempt = request.server.accountLimiter.take(
+      user === undefined ? `typed:${body.identifier}` : `user:${user.id}`,
+    );
+    if (!attempt.ok) return await tooManyRequests(reply, attempt.retryAfterSeconds);
 
     // Always verify something. Returning early for an unknown email would make
     // "no such user" ~1ms and "wrong password" ~50ms, and that gap answers the
@@ -43,7 +68,7 @@ export function registerSessionRoutes(app: FastifyInstance, pool: Pool): void {
 
     if (user === undefined || !ok) {
       // One response for both. Never "no such user" or "wrong password".
-      return await reply.status(401).send({ error: "Invalid email or password" });
+      return await reply.status(401).send({ error: "Invalid credentials" });
     }
 
     const session = await createSession(pool, user.id);

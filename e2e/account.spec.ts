@@ -2,12 +2,22 @@ import { expect, test, type Page } from "@playwright/test";
 
 let counter = 0;
 const uniqueEmail = () => `closing+${Date.now()}-${counter++}@example.com`;
+/**
+ * Handles are capped at 32 characters, so this is not the email.
+ *
+ * The random part is not decoration: a timestamp plus a per-file counter
+ * collided between two spec files registering in the same millisecond, which
+ * failed only in the full parallel run and passed every time in isolation.
+ */
+const uniqueHandle = () =>
+  `u${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 const PASSWORD = "a-good-password";
 
 async function registerAndBuild(page: Page, email: string): Promise<void> {
   await page.goto("/");
   await page.getByRole("button", { name: "Create one" }).click();
   await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Username").fill(uniqueHandle());
   await page.getByLabel(/Password/).fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
 
@@ -33,7 +43,7 @@ test("closing an account signs you out and the password stops working", async ({
   await page.getByLabel("Email").fill(email);
   await page.getByLabel(/Password/).fill(PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByText("Invalid email or password")).toBeVisible();
+  await expect(page.getByText("Invalid credentials")).toBeVisible();
 });
 
 test("a wrong password leaves the account alone", async ({ page }) => {

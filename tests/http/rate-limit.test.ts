@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { rateLimiter } from "../../src/http/rate-limit.js";
 import { buildServer } from "../../src/http/server.js";
 import { testPool, useCleanDatabase } from "../support/db.js";
-import { signIn } from "../support/auth.js";
+import { handleFor, signIn } from "../support/auth.js";
 
 useCleanDatabase();
 
@@ -102,20 +102,23 @@ describe("token bucket", () => {
  * check entirely left the file green.
  */
 const WIDE = 10_000;
-const byEmail = { auth: { capacity: WIDE, perSeconds: 900 }, account: { capacity: 3, perSeconds: 900 } };
+const byAccount = { auth: { capacity: WIDE, perSeconds: 900 }, account: { capacity: 3, perSeconds: 900 } };
 const byAddress = { auth: { capacity: 3, perSeconds: 900 }, account: { capacity: WIDE, perSeconds: 900 } };
 
-function serverWith(limits: typeof byEmail) {
+function serverWith(limits: typeof byAccount) {
   let app: FastifyInstance;
   beforeEach(async () => {
     app = buildServer(testPool(), limits);
     await app.ready();
   });
   return {
-    login: (email: string, password = "wrong-password-here") =>
-      app!.inject({ method: "POST", url: "/api/sessions", payload: { email, password } }),
-    register: (email: string) =>
-      app!.inject({ method: "POST", url: "/api/users", payload: { email, password: "a-good-password" } }),
+    login: (identifier: string, password = "wrong-password-here") =>
+      app!.inject({ method: "POST", url: "/api/sessions", payload: { identifier, password } }),
+    register: (email: string, username = handleFor(email)) =>
+      app!.inject({
+        method: "POST", url: "/api/users",
+        payload: { email, username, password: "a-good-password" },
+      }),
     get app() {
       return app!;
     },
@@ -123,7 +126,7 @@ function serverWith(limits: typeof byEmail) {
 }
 
 describe("guessing one account's password", () => {
-  const server = serverWith(byEmail);
+  const server = serverWith(byAccount);
 
   test("refuses after the allowance and says when to come back", async () => {
     for (let i = 0; i < 3; i++) expect((await server.login("a@x.com")).statusCode).toBe(401);
@@ -150,6 +153,37 @@ describe("guessing one account's password", () => {
     expect((await server.login("alice@x.com")).statusCode).toBe(429);
 
     expect((await server.login("bob@x.com")).statusCode).toBe(401);
+  });
+});
+
+describe("two identifiers, one allowance", () => {
+  const server = serverWith(byAccount);
+
+  test("alternating email and username does not double the allowance", async () => {
+    // The whole reason the login route resolves the identifier *before* it
+    // spends a token. Keyed on what was typed, these six requests would be two
+    // buckets of three and none of them would ever be refused — and knowing
+    // both spellings of an account is not privileged information, it is what a
+    // profile page shows.
+    await server.register("alice@x.com", "alice");
+
+    const spellings = ["alice@x.com", "alice", "alice@x.com"];
+    for (const [i, identifier] of spellings.entries()) {
+      expect((await server.login(identifier)).statusCode, `${i}: ${identifier}`).toBe(401);
+    }
+
+    // Fourth attempt against the same account, whichever way it is spelled.
+    expect((await server.login("alice")).statusCode).toBe(429);
+    expect((await server.login("alice@x.com")).statusCode).toBe(429);
+  });
+
+  test("an identifier nobody has is still bounded, and on its own key", async () => {
+    // Unknown identifiers have no id to key on, so they key on the typed
+    // string. Each distinct guess is its own target — which is right, and also
+    // means this cannot be used to lock out an account that does not exist.
+    for (let i = 0; i < 3; i++) expect((await server.login("ghost")).statusCode).toBe(401);
+    expect((await server.login("ghost")).statusCode).toBe(429);
+    expect((await server.login("other-ghost")).statusCode).toBe(401);
   });
 });
 

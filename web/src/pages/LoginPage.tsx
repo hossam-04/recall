@@ -10,7 +10,11 @@ import { messageOf } from "../App.js";
  */
 export function LoginPage({ onSignedIn }: { onSignedIn: (user: User) => void }) {
   const [registering, setRegistering] = useState(false);
-  const [email, setEmail] = useState("");
+  // One field for two meanings: the email when registering, either identifier
+  // when signing in. Two states would let a half-filled one linger when the
+  // mode is toggled, which is how a form submits a value nobody typed.
+  const [identifier, setIdentifier] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -20,8 +24,8 @@ export function LoginPage({ onSignedIn }: { onSignedIn: (user: User) => void }) 
     setError("");
     setBusy(true);
     try {
-      if (registering) await api.post("/users", { email, password });
-      const user = await api.post<User>("/sessions", { email, password });
+      if (registering) await api.post("/users", { email: identifier, username, password });
+      const user = await api.post<User>("/sessions", { identifier, password });
       onSignedIn(user);
     } catch (caught) {
       setError(messageOf(caught));
@@ -38,12 +42,26 @@ export function LoginPage({ onSignedIn }: { onSignedIn: (user: User) => void }) 
       </p>
       <form onSubmit={(event) => void submit(event)} style={{ maxWidth: "none" }}>
         <label>
-          <span>Email</span>
+          <span>{registering ? "Email" : "Email or username"}</span>
           <input
-            type="email" name="email" value={email} required autoFocus
-            onChange={(event) => setEmail(event.target.value)}
+            // `text` when signing in: half the valid values are not emails, and
+            // the browser would refuse to submit them.
+            type={registering ? "email" : "text"}
+            name="identifier" value={identifier} required autoFocus
+            onChange={(event) => setIdentifier(event.target.value)}
           />
         </label>
+        {registering && (
+          <label>
+            <span>Username</span>
+            <input
+              type="text" name="username" value={username} required
+              pattern="[A-Za-z0-9][A-Za-z0-9\-]{0,30}[A-Za-z0-9]|[A-Za-z0-9]"
+              title="1 to 32 characters: letters, digits and inner hyphens"
+              onChange={(event) => setUsername(event.target.value)}
+            />
+          </label>
+        )}
         <label>
           <span>Password{registering ? " (at least 8 characters)" : ""}</span>
           <input

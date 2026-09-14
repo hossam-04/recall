@@ -8,11 +8,13 @@ import { testPool, useCleanDatabase } from "../support/db.js";
 useCleanDatabase();
 
 const app = () => buildServer(testPool());
-const CREDENTIALS = { email: "a@x.com", password: "a-good-password" };
+const REGISTRATION = { email: "a@x.com", username: "ann", password: "a-good-password" };
+/** What the login route takes: one identifier, either spelling. */
+const CREDENTIALS = { identifier: "a@x.com", password: "a-good-password" };
 
 async function registered() {
   const server = app();
-  await server.inject({ method: "POST", url: "/api/users", payload: CREDENTIALS });
+  await server.inject({ method: "POST", url: "/api/users", payload: REGISTRATION });
   return server;
 }
 
@@ -69,7 +71,7 @@ describe("POST /sessions", () => {
       method: "POST", url: "/api/sessions", payload: { ...CREDENTIALS, password: "wrong-password" },
     });
     const noSuchUser = await server.inject({
-      method: "POST", url: "/api/sessions", payload: { email: "nobody@x.com", password: "whatever!" },
+      method: "POST", url: "/api/sessions", payload: { identifier: "nobody@x.com", password: "whatever!" },
     });
 
     expect(wrongPassword.statusCode).toBe(401);
@@ -87,7 +89,7 @@ describe("POST /sessions", () => {
     };
 
     const wrong = await time({ ...CREDENTIALS, password: "wrong-password" });
-    const unknown = await time({ email: "nobody@x.com", password: "wrong-password" });
+    const unknown = await time({ identifier: "nobody@x.com", password: "wrong-password" });
 
     // Without the dummy hash the unknown-email path skips argon2 entirely and
     // comes back an order of magnitude faster. Loose bound on purpose — this

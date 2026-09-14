@@ -24,7 +24,7 @@ describe("the CSRF cookie", () => {
   test("is readable by the page, while the session cookie is not", async () => {
     const login = await app.inject({
       method: "POST", url: "/api/sessions",
-      payload: { email: "alice@x.com", password: "a-good-password" },
+      payload: { identifier: "alice@x.com", password: "a-good-password" },
     });
     const cookies = (login.headers["set-cookie"] as string[]).join("\n");
 

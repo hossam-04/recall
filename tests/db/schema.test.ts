@@ -26,10 +26,11 @@ async function violates(constraint: string, write: Promise<unknown>): Promise<vo
   await expect(write).rejects.toMatchObject({ constraint });
 }
 
+let handles = 0;
 async function seedUser(email = "a@x.com"): Promise<string> {
   const result = await testPool().query<Id>(
-    "insert into users (email, password_hash) values ($1, $2) returning id",
-    [email, "argon2-hash-goes-here"],
+    "insert into users (email, password_hash, username) values ($1, $2, $3) returning id",
+    [email, "argon2-hash-goes-here", `seed${(handles += 1)}`],
   );
   return one(result).id;
 }
@@ -53,14 +54,57 @@ describe("users", () => {
     await seedUser("a@x.com");
     await violates(
       "users_email_unique",
-      testPool().query("insert into users (email, password_hash) values ($1, $2)", ["a@x.com", "h"]),
+      testPool().query(
+        "insert into users (email, password_hash, username) values ($1, $2, $3)",
+        ["a@x.com", "h", "second"],
+      ),
     );
     // The unique index alone is case-sensitive, so the lowercase check is what
     // actually stops Bob@x.com and bob@x.com becoming two accounts.
     await violates(
       "users_email_lowercase",
-      testPool().query("insert into users (email, password_hash) values ($1, $2)", ["A@x.com", "h"]),
+      testPool().query(
+        "insert into users (email, password_hash, username) values ($1, $2, $3)",
+        ["A@x.com", "h", "third"],
+      ),
     );
+  });
+});
+
+describe("usernames", () => {
+  // The email is independent of the username on purpose. Deriving it meant
+  // `Hossam` produced `Hossam-...@x.com`, which trips the *email* lowercase
+  // check first — the test then fails while the schema is behaving correctly.
+  let n = 0;
+  const insert = (username: string) =>
+    testPool().query(
+      "insert into users (email, password_hash, username) values ($1, $2, $3)",
+      [`h${(n += 1)}@x.com`, "hash", username],
+    );
+
+  test("accepts the shapes a handle is allowed to take", async () => {
+    // One character, digits, inner hyphens, and the full 32.
+    for (const username of ["a", "7", "a-b", "a1-b2-c3", "a".repeat(32)]) {
+      await expect(insert(username), username).resolves.toBeTruthy();
+    }
+  });
+
+  test("refuses the shapes that would break a URL or a namespace", async () => {
+    // Uppercase is refused rather than folded: the column is the authority, and
+    // the route lowercases before it ever gets here (migration 001's pattern).
+    await violates("users_username_lowercase", insert("Hossam"));
+
+    for (const username of ["-lead", "trail-", "has space", "dot.ted", "a".repeat(33), ""]) {
+      await violates("users_username_shaped", insert(username));
+    }
+  });
+
+  test("is unique, and the check makes that case-insensitive", async () => {
+    await insert("taken");
+    await violates("users_username_unique", insert("taken"));
+    // "Taken" never reaches the unique constraint — the lowercase check stops
+    // it first, which is what makes one plain unique index enough.
+    await violates("users_username_lowercase", insert("Taken"));
   });
 });
 

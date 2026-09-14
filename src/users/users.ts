@@ -9,17 +9,29 @@ const UNIQUE_VIOLATION = "23505";
  * it is one column and a table would be a join for every grade. Would move it
  * the moment there is a third setting with different write patterns.
  */
-export type User = { id: string; email: string; maximumIntervalDays: number };
+export type User = { id: string; email: string; username: string; maximumIntervalDays: number };
 
 /** Every read of a user selects the same columns, because `User` says so and
  *  a second spelling is a second thing to forget to update. */
-const USER_COLUMNS = 'id, email, maximum_interval_days as "maximumIntervalDays"';
+export const USER_COLUMNS = 'id, email, username, maximum_interval_days as "maximumIntervalDays"';
 
 /** Thrown when the email is already registered. The route decides what the
  *  client is told — see the enumeration question in ADR-014. */
 export class EmailAlreadyRegistered extends Error {
   constructor() {
     super("email already registered");
+  }
+}
+
+/**
+ * Thrown when the handle is taken. Separate from the email case because the two
+ * answers differ: an email is private and ADR-014 weighs what admitting it
+ * costs, while a username is public by design — `/u/alice` is a URL anyone can
+ * type — so there is nothing left to protect by being vague.
+ */
+export class UsernameAlreadyTaken extends Error {
+  constructor() {
+    super("username already taken");
   }
 }
 
@@ -52,12 +64,15 @@ export async function verifyPassword(hash: string, password: string): Promise<bo
   }
 }
 
-export async function createUser(pool: Pool, email: string, password: string): Promise<User> {
+export async function createUser(
+  pool: Pool, email: string, username: string, password: string,
+): Promise<User> {
   const passwordHash = await hashPassword(password);
   try {
     const { rows } = await pool.query<User>(
-      `insert into users (email, password_hash) values ($1, $2) returning ${USER_COLUMNS}`,
-      [email, passwordHash],
+      `insert into users (email, password_hash, username) values ($1, $2, $3)
+       returning ${USER_COLUMNS}`,
+      [email, passwordHash, username],
     );
     const user = rows[0];
     if (user === undefined) throw new Error("insert returned no row");
@@ -66,7 +81,13 @@ export async function createUser(pool: Pool, email: string, password: string): P
     // Checked rather than pre-queried: asking "does this email exist?" first
     // and then inserting is a race — two requests can both see "no" and one
     // will still fail. The constraint is the only authority that is never stale.
+    //
+    // Two constraints can raise this now, and the caller needs to tell them
+    // apart, so the *name* is read rather than just the code. Guessing from
+    // which field was submitted would be wrong exactly when both collide.
     if (error instanceof Error && "code" in error && error.code === UNIQUE_VIOLATION) {
+      const constraint = "constraint" in error ? error.constraint : undefined;
+      if (constraint === "users_username_unique") throw new UsernameAlreadyTaken();
       throw new EmailAlreadyRegistered();
     }
     throw error;
@@ -93,13 +114,25 @@ export async function passwordHashOf(pool: Pool, id: string): Promise<string | u
   return rows[0]?.passwordHash;
 }
 
-export async function findByEmail(
+/**
+ * Looks a user up by whichever identifier they typed.
+ *
+ * One lowercased comparison covers both columns because both are
+ * lowercase-enforced by a check constraint — that is what migration 001's
+ * pattern buys, repeated in 010. No `lower()` around the columns, which would
+ * make the indexes unusable and turn every login into a sequential scan.
+ *
+ * An email and a username cannot collide: the shape check forbids `@` in a
+ * handle, so no string can match both columns on different rows.
+ */
+export async function findByIdentifier(
   pool: Pool,
-  email: string,
+  identifier: string,
 ): Promise<(User & { passwordHash: string }) | undefined> {
   const { rows } = await pool.query<User & { passwordHash: string }>(
-    `select ${USER_COLUMNS}, password_hash as "passwordHash" from users where email = $1`,
-    [email],
+    `select ${USER_COLUMNS}, password_hash as "passwordHash"
+       from users where email = $1 or username = $1`,
+    [identifier],
   );
   return rows[0];
 }

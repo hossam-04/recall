@@ -61,13 +61,19 @@ json=(-H 'content-type: application/json')
 # it in a header — a browser attaches cookies by itself but will not set this,
 # which is exactly why it works as a CSRF defence (ADR-021).
 csrf() { awk '/recall_csrf/ { print $7 }' "$1"; }
-A='{"email":"alice@example.com","password":"a-good-password"}'
-B='{"email":"bob@example.com","password":"a-good-password"}'
+# Registration takes a handle; login takes one identifier that may be either.
+A='{"email":"alice@example.com","username":"alice","password":"a-good-password"}'
+B='{"email":"bob@example.com","username":"bob","password":"a-good-password"}'
+A_LOGIN='{"identifier":"alice@example.com","password":"a-good-password"}'
+A_BY_HANDLE='{"identifier":"alice","password":"a-good-password"}'
+B_LOGIN='{"identifier":"bob@example.com","password":"a-good-password"}'
 
 expect 201 "alice registers"      -X POST "${json[@]}" -d "$A" "$BASE/api/users"
 expect 409 "duplicate is refused" -X POST "${json[@]}" -d "$A" "$BASE/api/users"
-expect 401 "wrong password"       -X POST "${json[@]}" -d '{"email":"alice@example.com","password":"nope-nope"}' "$BASE/api/sessions"
-expect 201 "alice logs in"        -X POST "${json[@]}" -d "$A" -c "$JAR_A" "$BASE/api/sessions"
+expect 409 "taken handle refused" -X POST "${json[@]}" -d '{"email":"other@example.com","username":"alice","password":"a-good-password"}' "$BASE/api/users"
+expect 401 "wrong password"       -X POST "${json[@]}" -d '{"identifier":"alice@example.com","password":"nope-nope"}' "$BASE/api/sessions"
+expect 201 "alice logs in"        -X POST "${json[@]}" -d "$A_LOGIN" -c "$JAR_A" "$BASE/api/sessions"
+expect 201 "and by her handle"    -X POST "${json[@]}" -d "$A_BY_HANDLE" "$BASE/api/sessions"
 grep -q recall_session "$JAR_A" && pass "session cookie was set" || fail "no session cookie"
 grep -qi httponly    "$JAR_A" && pass "session cookie is HttpOnly" || fail "session cookie is not HttpOnly"
 [ -n "$(csrf "$JAR_A")" ] && pass "CSRF token cookie is readable" || fail "no readable CSRF cookie"
@@ -130,7 +136,7 @@ GONE=$(psql "$DB" -tAc "select deleted_at is not null from cards where id = $CAR
 [ "$GONE" = "t" ] && pass "the card row is marked, not removed" || fail "card row is gone or unmarked: '$GONE'"
 
 expect 201 "bob registers"  -X POST "${json[@]}" -d "$B" "$BASE/api/users"
-expect 201 "bob logs in"    -X POST "${json[@]}" -d "$B" -c "$JAR_B" "$BASE/api/sessions"
+expect 201 "bob logs in"    -X POST "${json[@]}" -d "$B_LOGIN" -c "$JAR_B" "$BASE/api/sessions"
 expect 403 "bob is refused alice's deck" -b "$JAR_B" "$BASE/api/decks/$DECK"
 expect 200 "bob's own deck list is empty" -b "$JAR_B" "$BASE/api/decks"
 [ "$(cat /tmp/smoke-body)" = "[]" ] && pass "and it really is empty" || fail "bob sees $(cat /tmp/smoke-body)"
@@ -255,7 +261,7 @@ expect 401 "her cookie stops working" -b "$JAR_A" "$BASE/api/decks"
 # Last in the file: these deliberately exhaust an allowance, and the per-address
 # counter is shared with everything above.
 guess() { curl -sS -o /tmp/smoke-body -D /tmp/smoke-head -w '%{http_code}' \
-  -X POST "${json[@]}" -d "{\"email\":\"$1\",\"password\":\"wrong-password-here\"}" \
+  -X POST "${json[@]}" -d "{\"identifier\":\"$1\",\"password\":\"wrong-password-here\"}" \
   "$BASE/api/sessions"; }
 
 for i in 1 2 3; do
@@ -268,9 +274,22 @@ grep -qi '^retry-after: [1-9]' /tmp/smoke-head && pass "and it says when to come
   || fail "no usable Retry-After header: $(grep -i retry /tmp/smoke-head)"
 
 # A different account from the same address still works, so what refused carol
-# was her email and not the address.
+# was her identifier and not the address.
 [ "$(guess dave@example.com)" = "401" ] && pass "another account is unaffected" \
   || fail "the per-account limit locked out an unrelated account"
+
+# Two spellings of one real account share one allowance. Keyed on what was
+# typed, these four would be two buckets of three and none would be refused —
+# and a handle is public, so knowing both spellings is not privileged.
+curl -sS -o /dev/null -X POST "${json[@]}" \
+  -d '{"email":"erin@example.com","username":"erin","password":"a-good-password"}' \
+  "$BASE/api/users"
+[ "$(guess erin@example.com)" = "401" ] && [ "$(guess erin)" = "401" ] \
+  && [ "$(guess erin@example.com)" = "401" ] \
+  && pass "three guesses at erin, spelled both ways, are answered 401" \
+  || fail "a guess at erin was refused too early"
+[ "$(guess erin)" = "429" ] && pass "the fourth is refused whichever spelling it uses" \
+  || fail "alternating the identifier doubled the allowance"
 
 # Now the address limit. Every email here is new, so the per-account limiter
 # cannot be what answers — its counter for each is untouched.
