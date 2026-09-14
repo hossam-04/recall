@@ -218,12 +218,20 @@ export function nextMemory(
  * you are willing to accept, solve for the elapsed time that lands there.
  * Lowering `requestRetention` lengthens every interval, which is the knob SM-2
  * simply does not have — its intervals are whatever the multipliers produce.
+ *
+ * Everything after `stability` is named rather than positional. It was
+ * positional, and `nextInterval(stability, cap)` silently passed a day count
+ * where a probability goes — both are `number`, so nothing objected until the
+ * range guard below threw. Named arguments make that call unwriteable instead
+ * of merely wrong.
  */
 export function nextInterval(
   stability: number,
-  requestRetention = 0.9,
-  w: readonly number[] = DEFAULT_PARAMETERS,
-  maximumInterval = 36_500,
+  {
+    requestRetention = 0.9,
+    w = DEFAULT_PARAMETERS,
+    maximumInterval = 36_500,
+  }: { requestRetention?: number; w?: readonly number[]; maximumInterval?: number } = {},
 ): number {
   if (requestRetention <= 0 || requestRetention > 1) {
     throw new RangeError(`Requested retention must be in (0, 1]: ${requestRetention}`);

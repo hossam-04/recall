@@ -70,7 +70,8 @@ export function App() {
           path="/account"
           element={
             <AccountPage
-              email={session.user.email}
+              user={session.user}
+              onUpdated={(user) => setSession({ status: "in", user })}
               onDeleted={() => {
                 setSession({ status: "out" });
                 void navigate("/login");

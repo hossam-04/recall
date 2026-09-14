@@ -15,16 +15,16 @@ describe("what FSRS actually does", () => {
     // be read directly as "days until due" at the default retention.
     for (const stability of [1, 7, 30, 365]) {
       expect(retrievability(stability, stability)).toBeCloseTo(0.9, 6);
-      expect(nextInterval(stability, 0.9)).toBe(Math.round(stability));
+      expect(nextInterval(stability, { requestRetention: 0.9 })).toBe(Math.round(stability));
     }
   });
 
   test("asking for higher retention shortens every interval", () => {
     const stability = 100;
-    const intervals = [0.7, 0.8, 0.9, 0.95].map((r) => nextInterval(stability, r));
+    const intervals = [0.7, 0.8, 0.9, 0.95].map((r) => nextInterval(stability, { requestRetention: r }));
     expect(intervals).toEqual([...intervals].sort((a, b) => b - a));
     // The knob SM-2 does not have: same card, same memory, different schedule.
-    expect(nextInterval(stability, 0.7)).toBeGreaterThan(nextInterval(stability, 0.95));
+    expect(nextInterval(stability, { requestRetention: 0.7 })).toBeGreaterThan(nextInterval(stability, { requestRetention: 0.95 }));
   });
 
   test("recalling a card you nearly forgot is worth more than recalling a fresh one", () => {

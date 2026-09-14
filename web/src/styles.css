@@ -1,20 +1,79 @@
+/* Both palettes are declared once, here, as the only place a colour is chosen.
+   Everything below paints with the mapped names (--bg, --fg, …), and the two
+   blocks after this one do nothing but re-point those names at the dark set.
+
+   Rejected declaring the dark values a second time inside each selector: eight
+   colours in three places is two places that will drift the next time one of
+   them is adjusted. */
 :root {
-  --bg: #fcfbf9;
-  --panel: #fff;
-  --fg: #1a1917;
-  --muted: #77736c;
-  --line: #e5e1d9;
-  --accent: #1f6b46;
-  --accent-soft: #e8f2ec;
-  --danger: #a8322b;
+  --light-bg: #fcfbf9;
+  --light-panel: #fff;
+  --light-fg: #1a1917;
+  --light-muted: #77736c;
+  --light-line: #e5e1d9;
+  --light-accent: #1f6b46;
+  --light-accent-soft: #e8f2ec;
+  --light-danger: #a8322b;
+  /* Text on an accent-filled button: white on the light green, near-black on
+     the dark one. A palette colour, so it belongs with the palette. */
+  --light-on-accent: #fff;
+
+  --dark-bg: #141517;
+  --dark-panel: #1c1e21;
+  --dark-fg: #eae7e1;
+  --dark-muted: #918c84;
+  --dark-line: #2b2e32;
+  --dark-accent: #74c39a;
+  --dark-accent-soft: #1b2a22;
+  --dark-danger: #e08b84;
+  --dark-on-accent: #10130f;
+
+  --bg: var(--light-bg);
+  --panel: var(--light-panel);
+  --fg: var(--light-fg);
+  --muted: var(--light-muted);
+  --line: var(--light-line);
+  --accent: var(--light-accent);
+  --accent-soft: var(--light-accent-soft);
+  --danger: var(--light-danger);
+  --on-accent: var(--light-on-accent);
+
   --radius: 10px;
-  color-scheme: light dark;
+  color-scheme: light;
 }
+
+/* No `data-theme` attribute means "follow the system", which is the state every
+   existing user is in — so this must keep working exactly as it did. The
+   `:not([data-theme="light"])` guard is what lets an explicit light choice win
+   over a dark OS; without it the media query would override the user. */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #141517; --panel: #1c1e21; --fg: #eae7e1; --muted: #918c84;
-    --line: #2b2e32; --accent: #74c39a; --accent-soft: #1b2a22; --danger: #e08b84;
+  :root:not([data-theme="light"]) {
+    --bg: var(--dark-bg);
+    --panel: var(--dark-panel);
+    --fg: var(--dark-fg);
+    --muted: var(--dark-muted);
+    --line: var(--dark-line);
+    --accent: var(--dark-accent);
+    --accent-soft: var(--dark-accent-soft);
+    --danger: var(--dark-danger);
+    --on-accent: var(--dark-on-accent);
+    color-scheme: dark;
   }
+}
+
+/* An explicit choice, which must win in both directions — including dark on a
+   light OS, which the media query alone can never produce. */
+:root[data-theme="dark"] {
+  --bg: var(--dark-bg);
+  --panel: var(--dark-panel);
+  --fg: var(--dark-fg);
+  --muted: var(--dark-muted);
+  --line: var(--dark-line);
+  --accent: var(--dark-accent);
+  --accent-soft: var(--dark-accent-soft);
+  --danger: var(--dark-danger);
+  --on-accent: var(--dark-on-accent);
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -49,8 +108,7 @@ button {
 }
 button:hover:not(:disabled) { border-color: var(--muted); }
 button:disabled { opacity: .45; cursor: default; }
-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 550; }
-@media (prefers-color-scheme: dark) { button.primary { color: #10130f; } }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 550; }
 button.primary:hover:not(:disabled) { filter: brightness(1.08); }
 button.quiet { border-color: transparent; background: transparent; color: var(--muted); padding: .35rem .5rem; }
 button.quiet:hover:not(:disabled) { color: var(--fg); background: var(--line); }

@@ -13,7 +13,7 @@ describe("POST /users", () => {
     const response = await register({ email: "a@x.com", password: "a-good-password" });
 
     expect(response.statusCode).toBe(201);
-    expect(response.json()).toEqual({ id: "1", email: "a@x.com" });
+    expect(response.json()).toEqual({ id: "1", email: "a@x.com", maximumIntervalDays: 36_500 });
     expect(response.body).not.toContain("argon2");
     expect(response.body).not.toContain("a-good-password");
   });

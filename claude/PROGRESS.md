@@ -16,11 +16,11 @@ that does not touch the authorisation model.
 ```
 $ npm run verify
 tsc --noEmit (both tsconfigs)  → clean
-vitest run                     → 25 files, 155 tests
+vitest run                     → 25 files, 159 tests
 ./scripts/api-smoke.sh         → 75 assertions, all good
-playwright test                → 14 specs, real Chromium
+playwright test                → 17 specs, real Chromium
 $ echo $?
-0                                          (~20 seconds)
+0                                          (~35 seconds)
 ```
 
 A working product: register, sign in, create decks, add cards, review them by
@@ -57,7 +57,9 @@ src/http/routes/            users, sessions, decks, cards — all under /api
 src/users, src/sessions     argon2 hashing, CSPRNG session + CSRF tokens
 web/src/                    React 19 + react-router, Vite proxies /api
 src/db/sql.ts               CARD_IS_LIVE — shared by two modules, cycle-free
-migrations/001–006          users, sessions, decks, cards, reviews, csrf, deleted_at
+web/src/theme.ts            system / light / dark, an attribute on <html>
+migrations/001–009          users, sessions, decks, cards, reviews, csrf,
+                            deleted_at, imported source, interval cap
 scripts/api-smoke.sh        the M2 bar, real socket, real curl
 e2e/review.spec.ts          the M3 bar, real Chromium
 e2e/edit-delete.spec.ts     two-press delete and the first PATCH the UI sends
@@ -65,13 +67,13 @@ e2e/account.spec.ts         closing an account, and a wrong password not doing s
 e2e/stats.spec.ts           the numbers a real review session produces
 ```
 
-**Five migrations, six tables.** Verified this session against a fresh empty
-database: all four apply and produce `cards, decks, reviews, schema_migrations,
+**Nine migrations, six tables.** Verified against a fresh empty database every
+test run: all nine apply and produce `cards, decks, reviews, schema_migrations,
 sessions, users`.
 
 ## Decisions that shape everything after them
 
-35 ADRs in `claude/DECISIONS.md`. The load-bearing ones:
+39 ADRs in `claude/DECISIONS.md`. The load-bearing ones:
 
 - **ADR-005** due dates are stored, not recomputed — changing a constant must
   not retroactively move cards already scheduled
@@ -233,6 +235,33 @@ order they run in.
    audit ADR-010 promised is finally written. Deploy was skipped by choice.
 6. **A local model via Ollama**, which would make M4 and M5 possible at $0.
    Nothing is installed yet; the machine is 16 GB / 8 cores.
+
+## Asked for directly, outside the list
+
+**Settings — done.** A theme toggle (ADR-038) and a per-user maximum interval
+(ADR-039). Both were smaller than they looked: dark mode already existed behind
+`prefers-color-scheme`, so the work was an *override*, and `nextInterval` had
+always taken a `maximumInterval` parameter nobody passed.
+
+**Public profiles — designed, not built.** Usernames, user search, public and
+private decks, stars, and copying someone else's public deck. Seven features
+asked for as "more like GitHub"; five of them are one subsystem. The design is
+settled — preview-then-copy, login by either email or username, a contribution
+heatmap on the profile, attribution with a live link and a snapshot fallback,
+and signed-in-only browsing — and the spec is the next thing to write.
+
+It does **not** break the scope cut: every one of those is a copy, and
+`CLAUDE.md` rules out *live* sharing. What it does change is the sentence beside
+it in ADR-036 — `decks.user_id` stops being the entire authorisation model, and
+becomes `user_id or visibility = 'public'`. That is the whole risk of the
+feature, and the reason the design puts a route-classification test in front of
+it: every route must declare itself owner-only or readable-by-public, and one
+that declares neither fails the build.
+
+The interval cap was briefly numbered 011, taking its number from a design that
+had already sketched 009 and 010 for this work. Renamed to 009 before it left
+this machine, with the one ledger row corrected to match — the SQL is unchanged,
+so the checksum still verifies.
 
 **Why `reviews` survives the M4 deferral, asked and answered this session.**
 ADR-010 justified the table primarily on M5, and M5 may now never happen — a

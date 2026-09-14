@@ -124,12 +124,25 @@ export function registerCardRoutes(
       const { rows } = await client.query<{
         id: string; repetitions: number;
         difficulty: number | null; stability: number | null;
-        lastReviewedAt: Date | null;
+        lastReviewedAt: Date | null; maximumIntervalDays: number;
       }>(
+        // The interval cap is read through the same join that authorises the
+        // request: `d.user_id = $2` has already established whose card this is,
+        // so `users u on u.id = d.user_id` cannot return a different person's
+        // setting. Fetching it in a separate query keyed by the same id would
+        // agree every time until someone passed the wrong variable — a second
+        // place to get identity wrong, for one saved millisecond.
+        //
+        // `for update of c` still locks only the card. Locking the user row as
+        // well would serialise every grade by the same person against each
+        // other, which is a real cost for a value nobody is racing to change.
         `select c.id, c.repetitions, c.difficulty, c.stability,
+                u.maximum_interval_days as "maximumIntervalDays",
                 (select max(r.reviewed_at) from reviews r where r.card_id = c.id)
                   as "lastReviewedAt"
-           from cards c join decks d on d.id = c.deck_id
+           from cards c
+           join decks d on d.id = c.deck_id
+           join users u on u.id = d.user_id
           where c.id = $1 and d.user_id = $2 and ${CARD_IS_LIVE} and ${DECK_IS_LIVE}
           for update of c`,
         [request.params.id, userId],
@@ -149,7 +162,7 @@ export function registerCardRoutes(
         card.lastReviewedAt === null ? 0 : calendarDaysBetween(card.lastReviewedAt, at);
 
       const next = nextMemory(memory, elapsedDays, GRADE_NUMBERS[body.grade]);
-      const intervalDays = nextInterval(next.stability);
+      const intervalDays = nextInterval(next.stability, { maximumInterval: card.maximumIntervalDays });
       const dueOn = toDateString(addDays(at, intervalDays));
       // Not part of the algorithm — kept because "four in a row" is worth
       // showing, and because FSRS has no counter a person can read.

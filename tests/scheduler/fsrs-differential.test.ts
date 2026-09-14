@@ -87,7 +87,7 @@ describe("FSRS-6 against ts-fsrs", () => {
         generatorParameters({ w: [...DEFAULT_PARAMETERS], request_retention: retention }),
       );
       for (const stability of [0.1, 1, 3.7, 15, 100, 1_000, 36_500]) {
-        expect(nextInterval(stability, retention), `S=${stability} R=${retention}`)
+        expect(nextInterval(stability, { requestRetention: retention }), `S=${stability} R=${retention}`)
           .toBe(theirs.next_interval(stability, 0));
       }
     }

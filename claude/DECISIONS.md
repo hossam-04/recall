@@ -1470,3 +1470,94 @@ through the API by design — and asserts the card queries refuse it on their ow
 
 That is the fourth time here that a test passed for a reason other than its
 name, and the second where the cause was one filter masking another.
+
+## ADR-038 — The theme is three states, stored on the device
+
+**Decision.** `system` / `light` / `dark`, applied as a `data-theme` attribute on
+`<html>` and remembered in `localStorage`. `system` is stored as the *absence*
+of the attribute.
+
+**Three states, not a toggle.** Dark mode already worked — `styles.css` has
+honoured `prefers-color-scheme` since the UI shipped — so every existing user is
+in a state a boolean cannot express. "Follow the OS" is the default and has to
+remain reachable after someone has overridden it, which a two-value switch
+makes impossible.
+
+**Absence as a value.** Storing `system` as no attribute is what lets the
+existing media query keep working untouched. An attribute is an override; no
+attribute is a deferral. The light override then needs
+`:root:not([data-theme="light"])` around the media query, or a dark OS would win
+over an explicit light choice — the media query is what must yield, not the
+person.
+
+**One palette, declared once.** Both palettes are `--light-*` / `--dark-*` tokens
+on `:root`, and the theme blocks only re-point the mapped names (`--bg`, `--fg`,
+…). Rejected repeating the eight colour values inside each selector: three
+copies is two that drift the next time a colour is adjusted.
+
+**localStorage, not a column on `users`.** A theme is per-device — the same
+account on a laptop at night and a phone outdoors can reasonably differ — and a
+server round trip means the page paints in the wrong palette and corrects
+itself. Reads and writes are wrapped in `try`/`catch`: Safari in private mode
+throws on access, and a theme is not worth a blank page. **Would move it** to
+the database only if the server ever had to know the theme, which it does not.
+
+**Applied before `createRoot`**, not in a React effect, for the same reason: a
+theme applied during the first render paints the default palette and repaints.
+
+### The bug the refactor shipped, and what caught it
+
+Converting the palette to tokens left one rule behind:
+`@media (prefers-color-scheme: dark) { button.primary { color: #10130f } }`.
+Every colour around it followed the toggle; the accent button's *text* kept
+following the operating system. The Playwright spec asserted `body`'s background
+and passed. What found it was looking at the page in a real browser — ADR-024's
+territory, a second time.
+
+The fix was to make that colour a palette token (`--on-accent`) like the others,
+and the spec now asserts a *second, unrelated* themed property, which catches the
+class of miss rather than the one instance.
+
+## ADR-039 — The maximum interval is a column, read through the authorising join
+
+**Decision.** `users.maximum_interval_days`, default 36500, checked `between 1 and 36500`, read in the grading query and passed to `nextInterval`.
+
+**The parameter already existed.** `nextInterval` has always taken
+`maximumInterval`, defaulting to 36500, and nothing ever passed one — so the
+effective cap has been a hundred years. This makes it a setting rather than an
+argument nobody supplies.
+
+**The default is today's behaviour, deliberately not ADR-004's 60.** SM-2 capped
+at 60 because an eight-month interval is a card you have functionally deleted,
+and that reasoning still holds — but applying it in a migration would rewrite
+the schedule of every card in the database. A default that changes existing
+behaviour is a data migration wearing a default's clothes.
+
+**It applies at the next review only.** Lowering the cap does not walk the table
+rewriting `due_on`. Dates the user can already see are not a form's to change.
+
+**Read through the join that authorises the request.** `d.user_id = $2` has
+already established whose card this is, so `join users u on u.id = d.user_id`
+cannot return a different person's setting. Rejected a separate query keyed by
+the same id: it agrees every time until someone passes the wrong variable, and a
+second place to get identity wrong is worse than a saved round trip. The lock
+stays `for update of c` — locking the user row as well would serialise every
+grade by one person for a value nobody is racing to change.
+
+**Stated twice, on purpose.** The bounds are on the column *and* in the Zod
+schema. The constraint is the authority and covers every write path; the schema
+exists so a bad request is a 400 naming the field instead of a 500 from a raised
+SQLSTATE.
+
+### The bug, and the fix that was not "be more careful"
+
+`nextInterval(stability, cap)` passed a day count where `requestRetention` — a
+probability — goes. Both are `number`, so nothing objected. It surfaced only
+because the function range-checks retention and threw on `3`; a cap of `1` would
+have been a *valid* retention of 100% and returned a plausible wrong interval,
+silently, forever.
+
+The fix was the signature, not the call site: everything after `stability` is now
+named. The mistake is no longer writeable. Four call sites updated, and the
+differential test against `ts-fsrs` still passes, which is what says the
+refactor changed shape and not behaviour.

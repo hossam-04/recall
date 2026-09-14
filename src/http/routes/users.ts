@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
 import {
-  EmailAlreadyRegistered, createUser, findById, passwordHashOf, verifyPassword,
+  EmailAlreadyRegistered, type User, createUser, findById, passwordHashOf, verifyPassword,
 } from "../../users/users.js";
 import { currentUser } from "../auth.js";
 import { parseBody } from "../server.js";
@@ -33,6 +33,15 @@ const Registration = z.object({
  */
 const ConfirmDeletion = z.object({ password: z.string().min(1) });
 
+/**
+ * The bounds are the same ones migration 009 put on the column. Stated twice on
+ * purpose: the constraint is the authority and catches every write path, but a
+ * request that violates it should come back as a 400 naming the field rather
+ * than a 500 from a raised SQLSTATE. The constraint is correctness; this is the
+ * error message.
+ */
+const Settings = z.object({ maximumIntervalDays: z.int().min(1).max(36_500) });
+
 export function registerUserRoutes(app: FastifyInstance, pool: Pool): void {
   /**
    * Who am I. The SPA has no way to know on load whether its cookie is still
@@ -44,6 +53,28 @@ export function registerUserRoutes(app: FastifyInstance, pool: Pool): void {
     const user = await findById(pool, currentUser(request));
     // The hook authenticated against a session row whose user is gone — only
     // possible if the user was deleted mid-request. Treat as signed out.
+    if (user === undefined) throw new Error("session user no longer exists");
+    return user;
+  });
+
+  /**
+   * Settings, one column so far. PATCH rather than PUT because the body is a
+   * subset of the user and always will be — a PUT that omits `email` would
+   * mean "unset the email", and nothing here wants that meaning.
+   *
+   * Returns the whole user for the reason card editing does: a client that
+   * merges a partial response holds a mixture of old and new values.
+   */
+  app.patch("/me", async (request, reply) => {
+    const body = parseBody(Settings, request.body, reply);
+    if (body === undefined) return;
+
+    const { rows } = await pool.query<User>(
+      `update users set maximum_interval_days = $2 where id = $1
+       returning id, email, maximum_interval_days as "maximumIntervalDays"`,
+      [currentUser(request), body.maximumIntervalDays],
+    );
+    const user = rows[0];
     if (user === undefined) throw new Error("session user no longer exists");
     return user;
   });

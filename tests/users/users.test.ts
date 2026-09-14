@@ -45,7 +45,7 @@ describe("the user store", () => {
   test("creates a user and never returns the hash", async () => {
     const user = await createUser(testPool(), "a@x.com", "a-good-password");
 
-    expect(user).toEqual({ id: "1", email: "a@x.com" });
+    expect(user).toEqual({ id: "1", email: "a@x.com", maximumIntervalDays: 36_500 });
     expect(JSON.stringify(user)).not.toContain("argon2");
   });
 

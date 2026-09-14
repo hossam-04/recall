@@ -86,7 +86,7 @@ export const api = {
   del: <T,>(path: string, body?: unknown) => request<T>("DELETE", path, body),
 };
 
-export type User = { id: string; email: string };
+export type User = { id: string; email: string; maximumIntervalDays: number };
 export type Deck = {
   id: string;
   name: string;

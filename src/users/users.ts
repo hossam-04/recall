@@ -4,7 +4,16 @@ import type { Pool } from "pg";
 /** Postgres raises this SQLSTATE for any unique-constraint violation. */
 const UNIQUE_VIOLATION = "23505";
 
-export type User = { id: string; email: string };
+/**
+ * `maximumIntervalDays` is on the user rather than in a settings table because
+ * it is one column and a table would be a join for every grade. Would move it
+ * the moment there is a third setting with different write patterns.
+ */
+export type User = { id: string; email: string; maximumIntervalDays: number };
+
+/** Every read of a user selects the same columns, because `User` says so and
+ *  a second spelling is a second thing to forget to update. */
+const USER_COLUMNS = 'id, email, maximum_interval_days as "maximumIntervalDays"';
 
 /** Thrown when the email is already registered. The route decides what the
  *  client is told — see the enumeration question in ADR-014. */
@@ -47,7 +56,7 @@ export async function createUser(pool: Pool, email: string, password: string): P
   const passwordHash = await hashPassword(password);
   try {
     const { rows } = await pool.query<User>(
-      "insert into users (email, password_hash) values ($1, $2) returning id, email",
+      `insert into users (email, password_hash) values ($1, $2) returning ${USER_COLUMNS}`,
       [email, passwordHash],
     );
     const user = rows[0];
@@ -65,7 +74,8 @@ export async function createUser(pool: Pool, email: string, password: string): P
 }
 
 export async function findById(pool: Pool, id: string): Promise<User | undefined> {
-  const { rows } = await pool.query<User>("select id, email from users where id = $1", [id]);
+  const { rows } = await pool.query<User>(
+    `select ${USER_COLUMNS} from users where id = $1`, [id]);
   return rows[0];
 }
 
@@ -88,7 +98,7 @@ export async function findByEmail(
   email: string,
 ): Promise<(User & { passwordHash: string }) | undefined> {
   const { rows } = await pool.query<User & { passwordHash: string }>(
-    'select id, email, password_hash as "passwordHash" from users where email = $1',
+    `select ${USER_COLUMNS}, password_hash as "passwordHash" from users where email = $1`,
     [email],
   );
   return rows[0];
