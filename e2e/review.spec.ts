@@ -113,7 +113,10 @@ test("the session survives a hard refresh, and logout ends it", async ({ page })
   // a browser: a wrong SameSite, a missing Path, a proxy that drops Set-Cookie.
   await page.reload();
   await expect(page.getByRole("heading", { name: "Your decks" })).toBeVisible();
-  await expect(page.getByText(email)).toBeVisible();
+  // The nav shows the handle rather than the email now, and the handle is
+  // generated per run — so what this asserts is that *a* session survived the
+  // reload, which is the actual subject of the test.
+  await expect(page.getByRole("link", { name: "Account" })).toBeVisible();
 
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();

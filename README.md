@@ -21,9 +21,9 @@ Everything below runs against a real Postgres, a real socket, and real Chromium.
 | Layer | What it covers | Size |
 |---|---|---|
 | `tsc --noEmit` | both tsconfigs, strict | — |
-| `vitest run` | unit and integration | 189 tests |
-| `scripts/api-smoke.sh` | a real server driven by curl | 93 assertions |
-| `playwright test` | a real browser, real cookies, real keyboard | 18 specs |
+| `vitest run` | unit and integration | 206 tests |
+| `scripts/api-smoke.sh` | a real server driven by curl | 110 assertions |
+| `playwright test` | a real browser, real cookies, real keyboard | 19 specs |
 
 The whole gate takes about 35 seconds. One non-zero exit is a failure.
 
@@ -32,6 +32,12 @@ reveals the answer, 1 to 4 grade it — and read your history back on a statisti
 page. Cards and whole decks can be deleted, accounts can be closed, and a second user
 gets a 403 on the first user's deck. Deleting never destroys review history: the
 statistics page still counts a session you did on a deck you later threw away.
+
+Accounts have a public handle. You can search for someone by the start of
+theirs, open their profile to see what they have published and a year of their
+study as a contribution grid, and star a deck to keep it. The grid counts how
+much someone studied and never what — private decks are in the totals and never
+in the list.
 
 A deck can be published. Anyone signed in can then read it and take their own
 copy — and that is all: publishing grants reads, never writes, so nobody else
@@ -113,7 +119,7 @@ src/http/routes/   users, sessions, decks, cards, stats — all under /api
 src/users, src/sessions   argon2 hashing, CSPRNG session and CSRF tokens
 src/stats/         streak, as a pure function
 web/src/           React 19 and react-router; Vite proxies /api to the API
-migrations/        eleven .sql files, applied in order, each in its own transaction
+migrations/        twelve .sql files, applied in order, each in its own transaction
 tests/, e2e/       roughly 3,200 lines, against real Postgres and real Chromium
 ```
 

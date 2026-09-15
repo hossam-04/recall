@@ -31,7 +31,7 @@ test("closing an account signs you out and the password stops working", async ({
   const email = uniqueEmail();
   await registerAndBuild(page, email);
 
-  await page.getByRole("link", { name: email }).click();
+  await page.getByRole("link", { name: "Account" }).click();
   await page.getByRole("button", { name: "Delete my account" }).click();
   await page.getByLabel(/Enter your password/).fill(PASSWORD);
   await page.getByRole("button", { name: "Permanently delete everything" }).click();
@@ -50,7 +50,7 @@ test("a wrong password leaves the account alone", async ({ page }) => {
   const email = uniqueEmail();
   await registerAndBuild(page, email);
 
-  await page.getByRole("link", { name: email }).click();
+  await page.getByRole("link", { name: "Account" }).click();
   await page.getByRole("button", { name: "Delete my account" }).click();
   await page.getByLabel(/Enter your password/).fill("not-the-password");
   await page.getByRole("button", { name: "Permanently delete everything" }).click();

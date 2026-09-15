@@ -41,7 +41,7 @@ test.describe("appearance", () => {
 
   test("an explicit choice overrides the operating system and survives a reload", async ({ page }) => {
     await register(page);
-    await page.getByRole("link", { name: /@/ }).click();
+    await page.getByRole("link", { name: "Account" }).click();
 
     // Nothing is set yet: every existing user is in this state, and it is what
     // makes the media query the only thing deciding the palette.
@@ -66,7 +66,7 @@ test.describe("appearance", () => {
 
   test("choosing System hands the decision back to the operating system", async ({ page }) => {
     await register(page);
-    await page.getByRole("link", { name: /@/ }).click();
+    await page.getByRole("link", { name: "Account" }).click();
 
     await page.getByRole("radio", { name: "Dark" }).click();
     await page.getByRole("radio", { name: "System" }).click();
@@ -80,7 +80,7 @@ test.describe("appearance", () => {
 test("the longest-interval setting is what the scheduler obeys", async ({ page }) => {
   await register(page);
 
-  await page.getByRole("link", { name: /@/ }).click();
+  await page.getByRole("link", { name: "Account" }).click();
   await page.getByLabel("Days").fill("2");
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Saved")).toBeVisible();

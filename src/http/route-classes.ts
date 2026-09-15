@@ -47,6 +47,7 @@ export const OWNER_ROUTES = new Set([
   "DELETE /api/me",
   "GET /api/stats",
   "GET /api/decks",
+  "GET /api/stars",
   "POST /api/decks",
   "POST /api/decks/import",
   "PATCH /api/decks/:id",
@@ -67,9 +68,13 @@ export const OWNER_ROUTES = new Set([
  * short, and every entry is a read or a copy-into-your-own-account.
  */
 export const VISITOR_ROUTES = new Set([
+  "GET /api/users",
+  "GET /api/users/:username",
   "GET /api/decks/:id",
   "GET /api/decks/:id/cards",
   "POST /api/decks/:id/copy",
+  "POST /api/decks/:id/star",
+  "DELETE /api/decks/:id/star",
 ]);
 
 export type RouteClass = "public" | "owner" | "visitor";

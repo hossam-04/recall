@@ -1708,3 +1708,92 @@ flips only after the PATCH resolves and React re-renders, and Playwright's
 by `toBeChecked()` retries and is the right tool for any control whose truth
 lives on the server. That is the third time a real browser has been the only
 thing to notice something — ADR-024, ADR-038, and now this.
+
+## ADR-042 — Profiles, search and stars: the phase that makes any of it findable
+
+**Decision.** `GET /api/users?q=` (prefix search), `GET /api/users/:username`
+(profile with a year-long contribution heatmap), and `deck_stars` with
+idempotent star/unstar. Phase 3 of the public-profiles spec, and the last of it.
+
+### The fan-out, which is the bug this phase was really about
+
+A star count on the same row as a card count looks like one more `left join`.
+It is not: joining a second one-to-many table multiplies the rows inside each
+group, so a deck with **three cards and two stars** reports `cardCount` 6 and
+`starCount` 6. No error, two plausible numbers.
+
+Three fixes exist. `count(distinct …)` works and costs a sort per group, and
+commits you to remembering `distinct` on every count in that query forever.
+Pre-aggregating in a derived table is right at scale. Chosen: a **scalar
+subquery** for stars, leaving the card aggregate — which is correct and needs
+its `filter` for `dueCount` — untouched. **Would switch** to the derived table
+when either side grows enough for the subqueries to show in `explain`.
+
+The test fixture has to be three and two. With one card and one star the broken
+query returns 1 and 1, which is correct, so the obvious fixture cannot see the
+bug at all.
+
+### And the sabotage that did not bite
+
+Putting the join back into the shared list columns left the star tests **green**,
+because every assertion about counts was against `GET /decks/:id`, which is a
+different statement (`loadDeck`) from the one serving `/decks` and `/stars`.
+Two queries produce a `starCount`; one of them was unobserved. A test now
+asserts the counts on both lists, and both sabotages turn it red.
+
+That is the eleventh test in this project found to be measuring something other
+than its name — and the third where one query was checked while a second,
+producing the same field, was not.
+
+### The list nobody guards
+
+`requireReadableDeck` answers about *one* deck. The deck list inside a profile
+has no deck to ask it about, so the visibility predicate is written out in that
+query and nowhere else protects it. Every list over other people's rows is its
+own place to get this right; ADR-041's route classes do not help here, and
+saying so is more useful than implying they do.
+
+### Search is a prefix, and the index was verified rather than assumed
+
+`like $1 || '%'`, capped at 20, emails never selected. A substring match
+(`%q%`) would be friendlier and cannot use an index under any collation.
+Migration 010's `text_pattern_ops` index exists for this shape, and the claim
+was checked on 50,000 synthetic rows: with only a default-collation btree,
+`Seq Scan`; with `text_pattern_ops`, `Index Only Scan` on a `~>=~ / ~<~` range.
+On the thirteen rows in the development database Postgres scans regardless,
+which is correct behaviour and not a broken index.
+
+### The heatmap
+
+Sequential data — a magnitude — so one hue, light to dark, monotonic in
+lightness, with a neutral at zero so "no reviews" reads as absence rather than
+as a little. The dark palette is chosen against the dark surface rather than
+flipped: on a dark ground, more reads as brighter.
+
+Levels are **fixed thresholds**, not a scale of the year's maximum. Scaling to
+the maximum lets one 200-review day flatten every ordinary day into level 1, so
+the chart would describe the outlier instead of the habit — and it makes two
+profiles incomparable.
+
+The palette validator in the `dataviz` skill reports FAILs here and says so
+itself in its footer: its checks are for *categorical* palettes, where adjacent
+hues must be tellable apart. For a sequential ramp the property that matters is
+lightness monotonicity, which holds. Its contrast WARN is real and inherent —
+the palest steps cannot reach 3:1 against the page — so every square carries its
+exact count in a `title`, and the year's total is stated in text above the grid.
+
+**Two limitations, named rather than discovered later.** It counts reviews in
+private decks, because a heatmap of public decks only would be nearly empty and
+would misrepresent how much someone studies — it reveals how much, never what.
+And it is computed in the *server's* time zone, since no user time zone is
+stored, so a profile read from another hemisphere can put a square on the
+neighbouring day.
+
+### A flake worth keeping
+
+The browser spec searched for the first six characters of a generated handle.
+Handles are `u` plus a base36 timestamp, and base36 milliseconds only change
+their last two digits within a second — so every spec file in a run shared its
+first six characters. With the search capped at twenty and ordered by name, the
+one being looked for fell off the end about one run in three. The prefix looked
+distinctive and was not.

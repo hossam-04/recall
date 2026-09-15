@@ -96,6 +96,12 @@ export type Deck = {
   /** Absent for a visitor: a due count is a fact about the owner's memory. */
   dueCount?: number;
   visibility: "private" | "public";
+  /** How many other people starred it. Computed in SQL, never stored. */
+  starCount: number;
+  /** Whether *you* starred it. Always false on your own decks — you cannot. */
+  starred?: boolean;
+  /** The owner's handle. Yourself, on your own decks. */
+  owner: string;
   /**
    * Which question the server answered about this deck for *this* request.
    * Sent explicitly rather than inferred from which fields arrived — guessing
@@ -103,8 +109,6 @@ export type Deck = {
    * discover is forbidden when the request comes back 403.
    */
   role: "owner" | "visitor";
-  /** Only on a visitor's view: whose deck this is. */
-  owner?: string;
   copiedFromDeckId: string | null;
   copiedFromLabel: string | null;
 };

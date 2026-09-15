@@ -7,6 +7,9 @@ import { DeckPage } from "./pages/DeckPage.js";
 import { ReviewPage } from "./pages/ReviewPage.js";
 import { AccountPage } from "./pages/AccountPage.js";
 import { StatsPage } from "./pages/StatsPage.js";
+import { ProfilePage } from "./pages/ProfilePage.js";
+import { PeoplePage } from "./pages/PeoplePage.js";
+import { StarsPage } from "./pages/StarsPage.js";
 
 /**
  * Three states, not two. "Not signed in" and "we have not asked yet" are
@@ -57,7 +60,10 @@ export function App() {
         <Link className="brand" to="/">recall</Link>
         <span className="who">
           <Link className="quiet" to="/stats">Stats</Link>
-          <Link className="quiet" to="/account">{session.user.email}</Link>
+          <Link className="quiet" to="/people">People</Link>
+          <Link className="quiet" to="/stars">Starred</Link>
+          <Link className="quiet" to={`/u/${session.user.username}`}>{session.user.username}</Link>
+          <Link className="quiet" to="/account">Account</Link>
           <button className="quiet" onClick={() => void signOut()}>Sign out</button>
         </span>
       </nav>
@@ -66,6 +72,9 @@ export function App() {
         <Route path="/decks/:id" element={<DeckPage />} />
         <Route path="/decks/:id/review" element={<ReviewPage />} />
         <Route path="/stats" element={<StatsPage />} />
+        <Route path="/people" element={<PeoplePage />} />
+        <Route path="/stars" element={<StarsPage />} />
+        <Route path="/u/:username" element={<ProfilePage me={session.user.username} />} />
         <Route
           path="/account"
           element={

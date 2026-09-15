@@ -16,9 +16,9 @@ that does not touch the authorisation model.
 ```
 $ npm run verify
 tsc --noEmit (both tsconfigs)  → clean
-vitest run                     → 29 files, 189 tests
-./scripts/api-smoke.sh         → 93 assertions, all good
-playwright test                → 18 specs, real Chromium
+vitest run                     → 32 files, 206 tests
+./scripts/api-smoke.sh         → 110 assertions, all good
+playwright test                → 19 specs, real Chromium
 $ echo $?
 0                                          (~35 seconds)
 ```
@@ -59,9 +59,11 @@ web/src/                    React 19 + react-router, Vite proxies /api
 src/db/sql.ts               CARD_IS_LIVE — shared by two modules, cycle-free
 web/src/theme.ts            system / light / dark, an attribute on <html>
 src/http/route-classes.ts   every route declares public / owner / visitor
-migrations/001–011          users, sessions, decks, cards, reviews, csrf,
+src/stats/daily.ts          per-day review counts, shared by stats and profiles
+web/src/Heatmap.tsx         a year of study, one sequential ramp
+migrations/001–012          users, sessions, decks, cards, reviews, csrf,
                             deleted_at, imported source, interval cap,
-                            usernames, deck visibility
+                            usernames, deck visibility, deck stars
 scripts/api-smoke.sh        the M2 bar, real socket, real curl
 e2e/review.spec.ts          the M3 bar, real Chromium
 e2e/edit-delete.spec.ts     two-press delete and the first PATCH the UI sends
@@ -69,13 +71,13 @@ e2e/account.spec.ts         closing an account, and a wrong password not doing s
 e2e/stats.spec.ts           the numbers a real review session produces
 ```
 
-**Eleven migrations, six tables.** Verified against a fresh empty database every
+**Twelve migrations, seven tables.** Verified against a fresh empty database every
 test run: all nine apply and produce `cards, decks, reviews, schema_migrations,
 sessions, users`.
 
 ## Decisions that shape everything after them
 
-41 ADRs in `claude/DECISIONS.md`. The load-bearing ones:
+42 ADRs in `claude/DECISIONS.md`. The load-bearing ones:
 
 - **ADR-005** due dates are stored, not recomputed — changing a constant must
   not retroactively move cards already scheduled
@@ -247,11 +249,13 @@ order they run in.
 `prefers-color-scheme`, so the work was an *override*, and `nextInterval` had
 always taken a `maximumInterval` parameter nobody passed.
 
-**Public profiles — phases 1 and 2 of 3 done.** Usernames and either-identifier
-login (ADR-040); publishing, visitor preview and copying (ADR-041). Phase 3 is
-stars, search and the contribution heatmap — and it is what makes any of this
-*findable*, because today the only way to reach someone's public deck is to be
-handed its URL.
+**Public profiles — done, all three phases.** Usernames and either-identifier
+login (ADR-040); publishing, visitor preview and copying (ADR-041); profiles,
+prefix search, stars and a year-long contribution heatmap (ADR-042).
+
+The seven things asked for as "more like GitHub" are all in, and none of them
+crossed the scope cut: every transfer is still a copy, and `CLAUDE.md` rules out
+*live* sharing only.
 
 The load-bearing piece is `src/http/route-classes.ts`: every route declares
 itself public, owner or visitor, and three tests plus a runtime assertion keep

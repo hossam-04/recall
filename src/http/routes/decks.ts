@@ -18,6 +18,13 @@ const CreateDeck = z.object({ name: z.string().trim().min(1).max(100) });
 type Deck = {
   id: string; name: string; createdAt: Date;
   role?: "owner" | "visitor";
+  starCount: number;
+  /** The owner's handle. On your own decks that is you; on a visitor's view it
+   *  is whose work they are reading, and it is half the attribution label. */
+  owner: string;
+  /** Whether *this* viewer starred it — absent from list queries, which are
+   *  your own decks and therefore never starrable by you. */
+  starred?: boolean;
   cardCount: number; dueCount: number;
   visibility: string;
   /** Null unless this deck was copied from another. The label is the snapshot
@@ -36,22 +43,44 @@ type Deck = {
  * would silently drop empty decks — which are exactly the decks a new user has.
  */
 /**
+ * A scalar subquery, emphatically not `left join deck_stars`.
+ *
+ * Joining a second one-to-many table beside `cards` multiplies the rows inside
+ * each group: three cards and two stars is six rows, so `cardCount` and
+ * `starCount` both come back 6. No error, two plausible numbers. `count
+ * (distinct …)` would also fix it, at the price of a sort per group and of
+ * having to remember `distinct` on every count in this query forever — so the
+ * card aggregate, which is correct and needs its `filter` for `dueCount`, is
+ * left alone and stars arrive where no fan-out can exist.
+ *
+ * The count is over a table whose primary key is `(deck_id, user_id)`, so this
+ * is an index-only scan of a contiguous range.
+ */
+const STAR_COUNT = `(select count(*) from deck_stars s where s.deck_id = d.id)::int as "starCount"`;
+
+/**
  * `pool.query<Deck>` is an assertion, not a check — TypeScript cannot read SQL,
  * so a column missing here is `undefined` at runtime and silent at compile
  * time. Adding a field to `Deck` therefore means visiting every select list
  * that claims to produce one. There are two: this and `loadDeck`.
  */
 const DECK_COLUMNS = `
-  select d.id, d.name, d.created_at as "createdAt", d.visibility,
+  select d.id, d.name, d.created_at as "createdAt", d.visibility, u.username as owner,
          d.copied_from_deck_id as "copiedFromDeckId",
          d.copied_from_label as "copiedFromLabel",
+         ${STAR_COUNT},
+         (exists (select 1 from deck_stars mine
+                   where mine.deck_id = d.id and mine.user_id = $1)) as starred,
          count(c.id)::int as "cardCount",
          (count(c.id) filter (where c.due_on <= $2::date))::int as "dueCount"
-    from decks d left join cards c on c.deck_id = d.id and ${CARD_IS_LIVE}`;
+    from decks d
+    join users u on u.id = d.user_id
+    left join cards c on c.deck_id = d.id and ${CARD_IS_LIVE}`;
 
 export async function decksOf(pool: Pool, userId: string): Promise<Deck[]> {
   const { rows } = await pool.query<Deck>(
-    `${DECK_COLUMNS} where d.user_id = $1 and ${DECK_IS_LIVE} group by d.id order by d.name`,
+    `${DECK_COLUMNS} where d.user_id = $1 and ${DECK_IS_LIVE}
+      group by d.id, u.username order by d.name`,
     [userId, today()],
   );
   // `role` on every row rather than only on the single-deck fetch. It is
@@ -70,18 +99,24 @@ export async function decksOf(pool: Pool, userId: string): Promise<Deck[]> {
  * the live-deck filter to be forgotten.
  */
 async function loadDeck(
-  pool: Pool, deckId: string,
+  pool: Pool, deckId: string, viewerId: string,
 ): Promise<(Deck & { ownerId: string; visibility: string }) | undefined> {
   const { rows } = await pool.query<Deck & { ownerId: string; visibility: string }>(
     `select d.id, d.name, d.created_at as "createdAt", d.user_id as "ownerId",
-            d.visibility, d.copied_from_deck_id as "copiedFromDeckId",
+            d.visibility, u.username as owner,
+            d.copied_from_deck_id as "copiedFromDeckId",
             d.copied_from_label as "copiedFromLabel",
+            ${STAR_COUNT},
+            (exists (select 1 from deck_stars s
+                      where s.deck_id = d.id and s.user_id = $3)) as starred,
             count(c.id)::int as "cardCount",
             (count(c.id) filter (where c.due_on <= $2::date))::int as "dueCount"
-       from decks d left join cards c on c.deck_id = d.id and ${CARD_IS_LIVE}
+       from decks d
+       join users u on u.id = d.user_id
+       left join cards c on c.deck_id = d.id and ${CARD_IS_LIVE}
       where d.id = $1 and ${DECK_IS_LIVE}
-      group by d.id`,
-    [deckId, today()],
+      group by d.id, u.username`,
+    [deckId, today(), viewerId],
   );
   return rows[0];
 }
@@ -128,7 +163,7 @@ export async function requireOwnedDeck(
   reply: FastifyReply,
 ): Promise<Deck | undefined> {
   assertDeclared(reply, "owner");
-  const deck = await loadDeck(pool, deckId);
+  const deck = await loadDeck(pool, deckId, userId);
   if (deck === undefined) {
     await reply.status(404).send({ error: "No such deck" });
     return undefined;
@@ -164,7 +199,7 @@ export async function requireReadableDeck(
   reply: FastifyReply,
 ): Promise<{ deck: Deck; role: "owner" | "visitor" } | undefined> {
   assertDeclared(reply, "visitor");
-  const deck = await loadDeck(pool, deckId);
+  const deck = await loadDeck(pool, deckId, userId);
   if (deck === undefined) {
     await reply.status(404).send({ error: "No such deck" });
     return undefined;
@@ -231,22 +266,6 @@ const EditDeck = z.object({ visibility: z.enum(["private", "public"]) });
  */
 const CopyDeck = z.object({ name: z.string().trim().min(1).max(100).optional() });
 
-/**
- * The handle of whoever owns a deck, for the attribution label and for showing
- * a visitor whose deck they are reading.
- *
- * Separate from `loadDeck` rather than a join added to it: every other caller
- * of that query is the owner, who does not need to be told their own name, and
- * a join paid for on every deck fetch to serve two routes is the wrong trade.
- */
-async function ownerHandleOf(pool: Pool, deckId: string): Promise<string> {
-  const { rows } = await pool.query<{ username: string }>(
-    `select u.username from decks d join users u on u.id = d.user_id where d.id = $1`,
-    [deckId],
-  );
-  return rows[0]?.username ?? "someone";
-}
-
 export function registerDeckRoutes(app: FastifyInstance, pool: Pool): void {
   app.post("/decks", async (request, reply) => {
     const userId = currentUser(request);
@@ -256,13 +275,22 @@ export function registerDeckRoutes(app: FastifyInstance, pool: Pool): void {
 
     try {
       const { rows } = await pool.query<Deck>(
-        // The literals are the truth about a deck that has just been created:
-        // no cards, nothing due, private, and copied from nothing.
-        `insert into decks (user_id, name) values ($1, $2)
-         returning id, name, created_at as "createdAt", visibility,
-                   copied_from_deck_id as "copiedFromDeckId",
-                   copied_from_label as "copiedFromLabel",
-                   0 as "cardCount", 0 as "dueCount"`,
+        // A CTE rather than a plain `returning`, because `returning` cannot
+        // join and every other deck response carries the owner's handle. The
+        // literals are the truth about a deck created a moment ago: no cards,
+        // nothing due, no stars, private, and copied from nothing.
+        `with inserted as (
+           insert into decks (user_id, name) values ($1, $2)
+           returning id, name, created_at, visibility, user_id,
+                     copied_from_deck_id, copied_from_label
+         )
+         select i.id, i.name, i.created_at as "createdAt", i.visibility,
+                u.username as owner,
+                i.copied_from_deck_id as "copiedFromDeckId",
+                i.copied_from_label as "copiedFromLabel",
+                0 as "starCount", false as starred,
+                0 as "cardCount", 0 as "dueCount"
+           from inserted i join users u on u.id = i.user_id`,
         [userId, body.name],
       );
       return await reply.status(201).send({ ...rows[0], role: "owner" });
@@ -355,9 +383,71 @@ export function registerDeckRoutes(app: FastifyInstance, pool: Pool): void {
     // number on screen that is true of someone else.
     if (found.role === "visitor") {
       const { dueCount: _dueCount, ...rest } = found.deck;
-      return { ...rest, role: found.role, owner: await ownerHandleOf(pool, request.params.id) };
+      return { ...rest, role: found.role };
     }
     return { ...found.deck, role: found.role };
+  });
+
+  /**
+   * Star and unstar, both idempotent, both answering 204.
+   *
+   * `on conflict do nothing` rather than reading first and inserting if absent:
+   * that read-then-write is a race two clicks can lose, and the primary key
+   * already knows the answer. Unstarring something never starred is likewise
+   * not an error — the caller asked for an end state and gets it.
+   */
+  app.post<{ Params: { id: string } }>("/decks/:id/star", async (request, reply) => {
+    const userId = currentUser(request);
+    const found = await requireReadableDeck(pool, request.params.id, userId, reply);
+    if (found === undefined) return;
+
+    // Not a security rule, a vanity one: the count should mean "other people
+    // found this useful". GitHub allows starring your own repository; this does
+    // not, and that is the only place the two deliberately differ.
+    if (found.role === "owner") {
+      return await reply.status(409).send({ error: "You cannot star your own deck" });
+    }
+
+    await pool.query(
+      `insert into deck_stars (deck_id, user_id) values ($1, $2) on conflict do nothing`,
+      [request.params.id, userId],
+    );
+    return await reply.status(204).send();
+  });
+
+  app.delete<{ Params: { id: string } }>("/decks/:id/star", async (request, reply) => {
+    const userId = currentUser(request);
+    if ((await requireReadableDeck(pool, request.params.id, userId, reply)) === undefined) return;
+
+    await pool.query(`delete from deck_stars where deck_id = $1 and user_id = $2`,
+      [request.params.id, userId]);
+    return await reply.status(204).send();
+  });
+
+  /**
+   * The decks you have starred.
+   *
+   * Only ones still public: a starred deck whose owner unpublished it is a link
+   * you cannot open, and listing it would be a promise the next click breaks.
+   * The star row survives, so republishing brings it back rather than quietly
+   * costing the owner a star someone gave them.
+   *
+   * This list needs the visibility predicate written out. No helper protects
+   * it — `requireReadableDeck` answers about *one* deck, and a list has no deck
+   * to ask about. Every list query over other people's rows is its own place to
+   * get this right.
+   */
+  app.get("/stars", async (request) => {
+    const userId = currentUser(request);
+    const { rows } = await pool.query(
+      `${DECK_COLUMNS}
+         join deck_stars st on st.deck_id = d.id and st.user_id = $1
+        where d.visibility = 'public' and ${DECK_IS_LIVE}
+        group by d.id, u.username, st.created_at
+        order by st.created_at desc`,
+      [userId, today()],
+    );
+    return rows;
   });
 
   /**
@@ -396,7 +486,7 @@ export function registerDeckRoutes(app: FastifyInstance, pool: Pool): void {
     const found = await requireReadableDeck(pool, request.params.id, currentUser(request), reply);
     if (found === undefined) return;
 
-    const label = `${found.deck.name} by ${await ownerHandleOf(pool, request.params.id)}`;
+    const label = `${found.deck.name} by ${found.deck.owner}`;
     const name = body.name ?? found.deck.name;
 
     const client = await pool.connect();

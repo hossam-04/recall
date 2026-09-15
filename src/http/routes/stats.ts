@@ -3,7 +3,8 @@ import type { Pool } from "pg";
 import { currentUser } from "../auth.js";
 import { DECK_IS_LIVE } from "../../db/sql.js";
 import { currentStreak } from "../../stats/streak.js";
-import { addDays, localTimeZone, toDateString } from "../../scheduler/calendar.js";
+import { dailyReviewCounts } from "../../stats/daily.js";
+import { addDays, toDateString } from "../../scheduler/calendar.js";
 
 const WINDOW_DAYS = 30;
 
@@ -36,18 +37,10 @@ const REVIEWS_OF = `
 export function registerStatsRoutes(app: FastifyInstance, pool: Pool): void {
   app.get("/stats", async (request) => {
     const userId = currentUser(request);
-    // The zone travels as a parameter rather than being read from the database
-    // session. `current_date` and `date(timestamptz)` both answer in Postgres's
-    // own TimeZone, which initdb copied from the operating system — so the same
-    // rows would yield different days on a different host.
-    const zone = localTimeZone();
-
-    const [byDay, byGrade, totals] = await Promise.all([
-      pool.query<{ day: string; count: number }>(
-        `select (r.reviewed_at at time zone $2)::date::text as day, count(*)::int as count
-           ${REVIEWS_OF} group by 1 order by 1`,
-        [userId, zone],
-      ),
+    const [counts, byGrade, totals] = await Promise.all([
+      // The same query the profile heatmap uses, and the same deliberate
+      // omissions — see src/stats/daily.ts.
+      dailyReviewCounts(pool, userId),
       pool.query<{ grade: string; count: number }>(
         // No zone here: this query has no dates in it. Passing one anyway is
         // not merely useless — the extended query protocol rejects a bind with
@@ -67,7 +60,6 @@ export function registerStatsRoutes(app: FastifyInstance, pool: Pool): void {
       ),
     ]);
 
-    const counts = new Map(byDay.rows.map((row) => [row.day, row.count]));
     const grades = { again: 0, hard: 0, good: 0, easy: 0 };
     for (const row of byGrade.rows) {
       if (row.grade in grades) grades[row.grade as keyof typeof grades] = row.count;
@@ -78,8 +70,8 @@ export function registerStatsRoutes(app: FastifyInstance, pool: Pool): void {
       totals: {
         // Summed from the daily rows rather than asked for separately: one
         // fewer scan, and the total can never disagree with the chart above it.
-        reviews: byDay.rows.reduce((sum, row) => sum + row.count, 0),
-        daysStudied: byDay.rows.length,
+        reviews: [...counts.values()].reduce((sum, count) => sum + count, 0),
+        daysStudied: counts.size,
         cards: totals.rows[0]?.cards ?? 0,
         decks: totals.rows[0]?.decks ?? 0,
       },

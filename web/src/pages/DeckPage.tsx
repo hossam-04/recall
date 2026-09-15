@@ -129,6 +129,22 @@ export function DeckPage() {
     }
   }
 
+  /**
+   * Star or unstar. Optimistic in neither direction: the count comes back from
+   * the server on the next load, and a button that lies for 200ms about a
+   * number other people can also change is worse than one that waits.
+   */
+  async function toggleStar(starred: boolean) {
+    setError("");
+    try {
+      if (starred) await api.post(`/decks/${id}/star`, {});
+      else await api.del(`/decks/${id}/star`);
+      await load();
+    } catch (caught) {
+      setError(messageOf(caught));
+    }
+  }
+
   /** Copy someone else's deck into your own account, then go to your copy. */
   async function copyDeck() {
     setError("");
@@ -168,12 +184,22 @@ export function DeckPage() {
   if (deck.role === "visitor") {
     return (
       <>
+        <p className="muted" style={{ marginBottom: ".5rem" }}>
+          <Link to={`/u/${deck.owner}`}>← {deck.owner}</Link>
+        </p>
         <h1 style={{ marginBottom: ".25rem" }}>{deck.name}</h1>
         <p className="subtitle" style={{ marginBottom: "1.5rem" }}>
-          {deck.cardCount} card{deck.cardCount === 1 ? "" : "s"} · by {deck.owner}
+          {deck.cardCount} card{deck.cardCount === 1 ? "" : "s"} · by {deck.owner} · ★{" "}
+          {deck.starCount}
         </p>
         {error !== "" && <p className="error" role="alert">{error}</p>}
         <p style={{ marginBottom: "1.5rem" }}>
+          <button
+            onClick={() => void toggleStar(deck.starred !== true)}
+            aria-pressed={deck.starred === true}
+          >
+            {deck.starred === true ? "★ Starred" : "☆ Star"}
+          </button>{" "}
           <button className="primary" onClick={() => void copyDeck()}>
             Copy this deck
           </button>{" "}
@@ -203,6 +229,7 @@ export function DeckPage() {
           <p className="subtitle">
             {cards.length} card{cards.length === 1 ? "" : "s"} ·{" "}
             {due > 0 ? `${due} due today` : "nothing due today"}
+            {deck.starCount > 0 && ` · ★ ${deck.starCount}`}
           </p>
           {deck.copiedFromLabel !== null && (
             <p className="muted" style={{ fontSize: ".85rem", margin: ".25rem 0 0" }}>

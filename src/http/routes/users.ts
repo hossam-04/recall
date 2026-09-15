@@ -8,6 +8,8 @@ import {
 import { currentUser } from "../auth.js";
 import { parseBody } from "../server.js";
 import { expiredCookie } from "../cookies.js";
+import { dailyReviewCounts } from "../../stats/daily.js";
+import { addDays, toDateString } from "../../scheduler/calendar.js";
 import { CSRF_COOKIE, SESSION_COOKIE } from "./sessions.js";
 
 /**
@@ -60,6 +62,9 @@ const ConfirmDeletion = z.object({ password: z.string().min(1) });
  */
 const Settings = z.object({ maximumIntervalDays: z.int().min(1).max(36_500) });
 
+/** A year, which is what a contribution grid means by "recently". */
+const HEATMAP_DAYS = 365;
+
 export function registerUserRoutes(app: FastifyInstance, pool: Pool): void {
   /**
    * Who am I. The SPA has no way to know on load whether its cookie is still
@@ -98,6 +103,92 @@ export function registerUserRoutes(app: FastifyInstance, pool: Pool): void {
     const user = rows[0];
     if (user === undefined) throw new Error("session user no longer exists");
     return user;
+  });
+
+  /**
+   * Find someone by the start of their handle.
+   *
+   * A prefix, not a substring. `%q%` would be friendlier and cannot use an
+   * index under any collation, so it degrades to a sequential scan of every
+   * user on every keystroke — and migration 010's `text_pattern_ops` index
+   * exists precisely for the `like 'q%'` shape.
+   *
+   * Emails never appear here. A handle is public by design; the address it was
+   * registered with is not, and a search endpoint is exactly where that
+   * distinction gets forgotten.
+   */
+  app.get<{ Querystring: { q?: string } }>("/users", async (request, reply) => {
+    const q = (request.query.q ?? "").trim().toLowerCase();
+    if (q === "") {
+      return await reply.status(400).send({
+        error: "Search for something",
+        details: [{ field: "q", message: "at least one character" }],
+      });
+    }
+
+    const { rows } = await pool.query<{ username: string; publicDecks: number }>(
+      `select u.username,
+              (select count(*) from decks d
+                where d.user_id = u.id and d.visibility = 'public'
+                  and d.deleted_at is null)::int as "publicDecks"
+         from users u
+        where u.username like $1 || '%'
+        order by u.username
+        limit 20`,
+      [q],
+    );
+    return rows;
+  });
+
+  /**
+   * Someone's profile: their public decks, and a year of study.
+   *
+   * The deck list here is the one place in this feature that no helper
+   * protects. `requireReadableDeck` answers about a single deck; a list has no
+   * deck to ask it about, so the visibility predicate is written out below and
+   * the test that would catch its absence names a private deck by name.
+   */
+  app.get<{ Params: { username: string } }>("/users/:username", async (request, reply) => {
+    const viewerId = currentUser(request);
+    const { rows } = await pool.query<{ id: string; username: string; createdAt: Date }>(
+      `select id, username, created_at as "createdAt" from users where username = $1`,
+      [request.params.username.toLowerCase()],
+    );
+    const user = rows[0];
+    if (user === undefined) return await reply.status(404).send({ error: "No such person" });
+
+    const mine = user.id === viewerId;
+    const [decks, counts] = await Promise.all([
+      pool.query(
+        `select d.id, d.name, d.visibility,
+                (select count(*) from deck_stars s where s.deck_id = d.id)::int as "starCount",
+                (select count(*) from cards c
+                  where c.deck_id = d.id and c.deleted_at is null)::int as "cardCount"
+           from decks d
+          where d.user_id = $1 and d.deleted_at is null
+            and (d.visibility = 'public' or $2)
+          order by d.name`,
+        [user.id, mine],
+      ),
+      dailyReviewCounts(pool, user.id),
+    ]);
+
+    return {
+      username: user.username,
+      joinedAt: user.createdAt,
+      totals: {
+        reviews: [...counts.values()].reduce((sum, count) => sum + count, 0),
+        daysStudied: counts.size,
+      },
+      decks: decks.rows,
+      // Zero-filled here rather than with a generate_series join, for the same
+      // reason the statistics page does it: a day with no reviews produces no
+      // row, and a grid built straight from the query would close its own gaps.
+      daily: Array.from({ length: HEATMAP_DAYS }, (_, index) => {
+        const day = toDateString(addDays(new Date(), index - (HEATMAP_DAYS - 1)));
+        return { day, count: counts.get(day) ?? 0 };
+      }),
+    };
   });
 
   app.post("/users", async (request, reply) => {

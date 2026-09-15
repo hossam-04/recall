@@ -17,6 +17,15 @@
   /* Text on an accent-filled button: white on the light green, near-black on
      the dark one. A palette colour, so it belongs with the palette. */
   --light-on-accent: #fff;
+  /* A sequential ramp: one hue, light to dark, monotonic in lightness. Not a
+     rainbow and not the categorical colours — magnitude is one variable, and
+     the only thing a reader must be able to do is order the steps. Level 0 is
+     a neutral, so "no reviews" reads as absence rather than as a little bit. */
+  --light-heat-0: #eceae5;
+  --light-heat-1: #d7ece0;
+  --light-heat-2: #9ed3b8;
+  --light-heat-3: #4f9f7a;
+  --light-heat-4: #1f6b46;
 
   --dark-bg: #141517;
   --dark-panel: #1c1e21;
@@ -27,6 +36,13 @@
   --dark-accent-soft: #1b2a22;
   --dark-danger: #e08b84;
   --dark-on-accent: #10130f;
+  /* Chosen against the dark surface rather than flipped: on a dark ground
+     magnitude reads as increasing brightness, so the ramp runs the other way. */
+  --dark-heat-0: #24282c;
+  --dark-heat-1: #1d4435;
+  --dark-heat-2: #2f6b4f;
+  --dark-heat-3: #4d9a76;
+  --dark-heat-4: #74c39a;
 
   --bg: var(--light-bg);
   --panel: var(--light-panel);
@@ -37,6 +53,11 @@
   --accent-soft: var(--light-accent-soft);
   --danger: var(--light-danger);
   --on-accent: var(--light-on-accent);
+  --heat-0: var(--light-heat-0);
+  --heat-1: var(--light-heat-1);
+  --heat-2: var(--light-heat-2);
+  --heat-3: var(--light-heat-3);
+  --heat-4: var(--light-heat-4);
 
   --radius: 10px;
   color-scheme: light;
@@ -57,6 +78,11 @@
     --accent-soft: var(--dark-accent-soft);
     --danger: var(--dark-danger);
     --on-accent: var(--dark-on-accent);
+    --heat-0: var(--dark-heat-0);
+    --heat-1: var(--dark-heat-1);
+    --heat-2: var(--dark-heat-2);
+    --heat-3: var(--dark-heat-3);
+    --heat-4: var(--dark-heat-4);
     color-scheme: dark;
   }
 }
@@ -73,6 +99,11 @@
   --accent-soft: var(--dark-accent-soft);
   --danger: var(--dark-danger);
   --on-accent: var(--dark-on-accent);
+  --heat-0: var(--dark-heat-0);
+  --heat-1: var(--dark-heat-1);
+  --heat-2: var(--dark-heat-2);
+  --heat-3: var(--dark-heat-3);
+  --heat-4: var(--dark-heat-4);
   color-scheme: dark;
 }
 
@@ -233,3 +264,21 @@ h2 { font-size: 1.05rem; font-weight: 650; margin: 2.25rem 0 .75rem; }
 .grade-bar { height: .5rem; border-radius: 999px; background: var(--accent-soft); min-width: 0; }
 .pill.grade-again { background: var(--danger); color: var(--panel); }
 .pill.grade-hard, .pill.grade-good, .pill.grade-easy { background: var(--accent-soft); color: var(--accent); }
+
+/* ---------- contribution heatmap ---------- */
+/* Columns are weeks, rows are weekdays — the same reading order as a calendar,
+   which is why the grid flows down a column before moving right. */
+.heatmap {
+  display: grid; grid-template-rows: repeat(7, 11px); grid-auto-flow: column;
+  grid-auto-columns: 11px; gap: 3px; overflow-x: auto; padding-bottom: .25rem;
+}
+.heatmap i { border-radius: 2px; background: var(--heat-0); display: block; }
+.heatmap i[data-level="1"] { background: var(--heat-1); }
+.heatmap i[data-level="2"] { background: var(--heat-2); }
+.heatmap i[data-level="3"] { background: var(--heat-3); }
+.heatmap i[data-level="4"] { background: var(--heat-4); }
+.heatmap-key {
+  display: flex; align-items: center; gap: .3rem; justify-content: flex-end;
+  font-size: .75rem; color: var(--muted); margin-top: .4rem;
+}
+.heatmap-key i { width: 11px; height: 11px; border-radius: 2px; display: block; }

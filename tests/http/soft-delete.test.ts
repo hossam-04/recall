@@ -13,8 +13,10 @@ beforeEach(async () => {
 });
 
 /** Registers a user, a deck and two cards; reviews and then deletes the first. */
+const HANDLE = "enumerator";
+
 async function deckWithADeletedCard() {
-  const user = await signIn(app);
+  const user = await signIn(app, "a@x.com", HANDLE);
   const as = { headers: user.headers };
 
   const deck = await app.inject({
@@ -98,7 +100,7 @@ describe("no readable route reveals a deleted card", () => {
   test("every parameterised GET route can be driven by this test", async () => {
     const unfillable = app.routeTable
       .filter((r) => r.method === "GET" && r.url.includes(":"))
-      .filter((r) => !r.url.startsWith("/api/decks/:id"));
+      .filter((r) => !r.url.startsWith("/api/decks/:id") && !r.url.includes(":username"));
 
     // A new GET route with a parameter this test cannot substitute would be
     // skipped silently below. Fail here instead and make it be handled.
@@ -113,7 +115,15 @@ describe("no readable route reveals a deleted card", () => {
 
     for (const { url } of routes) {
       const response = await app.inject({
-        method: "GET", url: url.replace("/decks/:id", `/decks/${deckId}`), ...as,
+        method: "GET",
+        // A profile lists its owner's decks, so it is one more place a deleted
+        // card's text could surface — which is why this route is filled in
+        // rather than excluded from the sweep.
+        url: url.replace("/decks/:id", `/decks/${deckId}`).replace(":username", HANDLE)
+          // Search needs something to search for. Sweeping it with a query
+          // that actually matches is stricter than skipping it, not weaker.
+          + (url === "/api/users" ? `?q=${HANDLE}` : ""),
+        ...as,
       });
       expect(response.statusCode, url).toBe(200);
       expect(response.body, `${url} still shows the deleted card`).not.toContain("DOOMED");

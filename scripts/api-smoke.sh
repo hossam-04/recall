@@ -297,6 +297,42 @@ MARKED=$(psql "$DB" -tAc "select count(*) from cards where deck_id = $DOOMED_DEC
 expect 201 "the name is free again" -X POST "${json[@]}" $CSRF_A \
   -d '{"name":"Doomed"}' -b "$JAR_A" "$BASE/api/decks"
 
+# --- profiles, search and stars (ADR-042) ------------------------------------
+
+# shellcheck disable=SC2086
+expect 200 "alice republishes for the profile checks" -X PATCH "${json[@]}" $CSRF_A \
+  -b "$JAR_A" -d '{"visibility":"public"}' "$BASE/api/decks/$DECK"
+
+expect 200 "bob finds alice by prefix" -b "$JAR_B" "$BASE/api/users?q=ali"
+grep -q '"username":"alice"' /tmp/smoke-body && pass "and she is in the results" \
+  || fail "alice not found: $(cat /tmp/smoke-body)"
+grep -q '@' /tmp/smoke-body && fail "search leaked an email: $(cat /tmp/smoke-body)" \
+  || pass "with no email anywhere in the response"
+expect 400 "an empty search is refused" -b "$JAR_B" "$BASE/api/users?q="
+
+expect 200 "her profile loads"  -b "$JAR_B" "$BASE/api/users/alice"
+grep -q '@' /tmp/smoke-body && fail "profile leaked an email" || pass "without an email"
+DAYS=$(sed -n 's/.*"daily":\[\(.*\)\].*/\1/p' /tmp/smoke-body | grep -o '"day"' | wc -l | tr -d ' ')
+[ "$DAYS" = "365" ] && pass "with a full year of days, zero-filled" || fail "got $DAYS days, not 365"
+expect 404 "and a handle nobody has is 404" -b "$JAR_B" "$BASE/api/users/nobody-at-all"
+
+# shellcheck disable=SC2086
+expect 204 "bob stars her deck" -X POST $CSRF_B -b "$JAR_B" "$BASE/api/decks/$DECK/star"
+# shellcheck disable=SC2086
+expect 204 "and starring twice is the same as once" -X POST $CSRF_B -b "$JAR_B" "$BASE/api/decks/$DECK/star"
+STARS=$(psql "$DB" -tAc "select count(*) from deck_stars where deck_id = $DECK")
+[ "$STARS" = "1" ] && pass "one row, not two" || fail "expected 1 star row, got $STARS"
+
+expect 200 "her deck reports the star" -b "$JAR_A" "$BASE/api/decks/$DECK"
+grep -q '"starCount":1' /tmp/smoke-body && pass "and the card count is untouched by it" \
+  || fail "star or card count is wrong: $(cat /tmp/smoke-body)"
+
+# shellcheck disable=SC2086
+expect 409 "alice cannot star her own deck" -X POST $CSRF_A -b "$JAR_A" "$BASE/api/decks/$DECK/star"
+expect 200 "bob's starred list has it" -b "$JAR_B" "$BASE/api/stars"
+grep -q '"owner":"alice"' /tmp/smoke-body && pass "credited to alice" \
+  || fail "no owner on the starred list: $(cat /tmp/smoke-body)"
+
 expect 204 "alice logs out" -X DELETE -b "$JAR_A" "$BASE/api/sessions"
 expect 401 "her cookie stops working" -b "$JAR_A" "$BASE/api/decks"
 
