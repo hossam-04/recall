@@ -93,7 +93,20 @@ export type Deck = {
   createdAt: string;
   /** Counted in SQL — see decksOf in src/http/routes/decks.ts. */
   cardCount: number;
-  dueCount: number;
+  /** Absent for a visitor: a due count is a fact about the owner's memory. */
+  dueCount?: number;
+  visibility: "private" | "public";
+  /**
+   * Which question the server answered about this deck for *this* request.
+   * Sent explicitly rather than inferred from which fields arrived — guessing
+   * from shape is how a client ends up rendering an edit button it will only
+   * discover is forbidden when the request comes back 403.
+   */
+  role: "owner" | "visitor";
+  /** Only on a visitor's view: whose deck this is. */
+  owner?: string;
+  copiedFromDeckId: string | null;
+  copiedFromLabel: string | null;
 };
 export type Card = {
   id: string;

@@ -83,7 +83,10 @@ export function DecksPage() {
     }
   }
 
-  const totalDue = (decks ?? []).reduce((sum, deck) => sum + deck.dueCount, 0);
+  // `?? 0` only because the type allows a visitor's deck to arrive without a
+  // due count. This list is always your own decks, so it never actually does —
+  // the fallback exists so the type stays honest for the page that does.
+  const totalDue = (decks ?? []).reduce((sum, deck) => sum + (deck.dueCount ?? 0), 0);
 
   return (
     <>
@@ -126,7 +129,7 @@ export function DecksPage() {
                 <span className="pill">
                   {deck.cardCount} card{deck.cardCount === 1 ? "" : "s"}
                 </span>
-                {deck.dueCount > 0 && <span className="pill due">{deck.dueCount} due</span>}
+                {(deck.dueCount ?? 0) > 0 && <span className="pill due">{deck.dueCount} due</span>}
               </span>
             </div>
           </Link>

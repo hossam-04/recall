@@ -1634,3 +1634,77 @@ from `Date.now()` plus a per-file counter. Counters restart per file, so two
 spec files registering in the same millisecond produced the same handle and one
 registration 409'd. It passed in isolation every time and failed roughly one run
 in three. Handles now carry random entropy.
+
+## ADR-041 — A deck may be published, and the widening is declared in one file
+
+**Decision.** `decks.visibility` is `private` or `public`. A public deck is
+**readable** by any signed-in user and writable by nobody but its owner. Phase 2
+of `docs/superpowers/specs/2026-09-15-public-profiles-design.md`.
+
+**The invariant, stated once so the tests can hunt for breaches of it:**
+
+```
+readable  =  you own it                       ← unconditional
+          OR (visibility = 'public' and live)
+```
+
+An `OR`, never an `AND`. Visibility only ever *adds* access, so a private deck is
+one where only the first clause can be true, and publishing changes nothing
+about what the owner can do.
+
+**Two named helpers, not one with a flag.** `requireOwnedDeck(…, { allowPublic:
+true })` would read, to someone skim-reading a call site next year, as the check
+it is not. The deciding argument is auditability: `grep requireReadableDeck`
+returns exactly the routes where the predicate is widened, which is the whole
+list a reviewer needs. A flag turns that audit into a reading exercise across
+every call site of the other helper.
+
+**Every route declares its class**, in `src/http/route-classes.ts`: `public`,
+`owner`, or `visitor`. Checked two ways, because a declaration alone is a
+comment:
+
+- `tests/http/route-classes.test.ts` fails the build if a route in Fastify's
+  real table is declared nowhere, declared twice, or declared while no longer
+  existing — that last one is the direction that rots quietly, because the next
+  route to take a retired URL would inherit a class nobody chose for it;
+- both helpers call `assertDeclared`, so a handler that uses the readable helper
+  on a route declared `owner` throws rather than serving. Declaration and
+  behaviour cannot drift apart in silence.
+
+**The visitor's card list is a different statement, not a looser predicate.**
+`due_on`, `interval_days`, `repetitions`, `difficulty` and `stability` measure
+the owner's memory rather than the deck — ADR-036's principle again. A shared
+select list with a ternary is one innocent edit from leaking all five. Filtering
+them out in JavaScript afterwards would be worse: a column added to `cards` next
+year arrives in the response by default. A select list fails closed; a deny-list
+fails open. The test asserts the key set *exactly* for the same reason.
+
+**Copying never leaves the database.** One transaction: the deck row, then
+`insert into cards … select … from cards`. Scheduler state is absent by
+construction — `due_on` is written as today and the other four columns appear
+nowhere in the statement, so there is no expression that *could* carry them. The
+copy is private however public the original was: inheriting visibility would
+republish someone else's work under your name by default. A name collision is
+409 and `name` in the body is the way out, which is also what makes copying your
+own deck useful rather than guaranteed to fail.
+
+**`role` travels on every deck response, including lists.** It is request-scoped
+rather than a column, so putting it on each row of a list looks wasteful. The
+alternative is a client inferring its role from which fields happen to be
+present, which is exactly the guessing a discriminator exists to stop.
+
+### What sabotage caught, and one thing it did not
+
+Five breakages, each turning something red: dropping `visibility = 'public'`
+from the readable helper; widening the visitor query by one column; letting the
+copy carry `due_on`; declaring a route in two classes; and pointing a *write*
+route at the readable helper, which takes the whole file down through
+`assertDeclared` rather than quietly permitting a stranger to write.
+
+What none of them caught was in the browser. `.check()` on the publish toggle
+failed against a correct server: the box is a **controlled** input whose state
+flips only after the PATCH resolves and React re-renders, and Playwright's
+`check()` asserts the new state immediately after clicking. `click()` followed
+by `toBeChecked()` retries and is the right tool for any control whose truth
+lives on the server. That is the third time a real browser has been the only
+thing to notice something — ADR-024, ADR-038, and now this.

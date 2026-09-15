@@ -16,9 +16,9 @@ that does not touch the authorisation model.
 ```
 $ npm run verify
 tsc --noEmit (both tsconfigs)  → clean
-vitest run                     → 26 files, 172 tests
-./scripts/api-smoke.sh         → 79 assertions, all good
-playwright test                → 17 specs, real Chromium
+vitest run                     → 29 files, 189 tests
+./scripts/api-smoke.sh         → 93 assertions, all good
+playwright test                → 18 specs, real Chromium
 $ echo $?
 0                                          (~35 seconds)
 ```
@@ -58,8 +58,10 @@ src/users, src/sessions     argon2 hashing, CSPRNG session + CSRF tokens
 web/src/                    React 19 + react-router, Vite proxies /api
 src/db/sql.ts               CARD_IS_LIVE — shared by two modules, cycle-free
 web/src/theme.ts            system / light / dark, an attribute on <html>
-migrations/001–010          users, sessions, decks, cards, reviews, csrf,
-                            deleted_at, imported source, interval cap, usernames
+src/http/route-classes.ts   every route declares public / owner / visitor
+migrations/001–011          users, sessions, decks, cards, reviews, csrf,
+                            deleted_at, imported source, interval cap,
+                            usernames, deck visibility
 scripts/api-smoke.sh        the M2 bar, real socket, real curl
 e2e/review.spec.ts          the M3 bar, real Chromium
 e2e/edit-delete.spec.ts     two-press delete and the first PATCH the UI sends
@@ -67,13 +69,13 @@ e2e/account.spec.ts         closing an account, and a wrong password not doing s
 e2e/stats.spec.ts           the numbers a real review session produces
 ```
 
-**Ten migrations, six tables.** Verified against a fresh empty database every
+**Eleven migrations, six tables.** Verified against a fresh empty database every
 test run: all nine apply and produce `cards, decks, reviews, schema_migrations,
 sessions, users`.
 
 ## Decisions that shape everything after them
 
-40 ADRs in `claude/DECISIONS.md`. The load-bearing ones:
+41 ADRs in `claude/DECISIONS.md`. The load-bearing ones:
 
 - **ADR-005** due dates are stored, not recomputed — changing a constant must
   not retroactively move cards already scheduled
@@ -86,6 +88,8 @@ sessions, users`.
 - **ADR-020** authentication is default-deny; tests enumerate the real route table
 - **ADR-021** CSRF is a synchronizer token on the session row, not double-submit
 - **ADR-028** the terminal CLI is retired
+- **ADR-041** every route declares who may reach it; the readable helper is a
+  second *name*, not a flag, so the audit is one grep
 
 ## What breaking things has taught us
 
@@ -243,9 +247,15 @@ order they run in.
 `prefers-color-scheme`, so the work was an *override*, and `nextInterval` had
 always taken a `maximumInterval` parameter nobody passed.
 
-**Public profiles — phase 1 of 3 done.** Usernames exist, registration takes
-one, and login accepts either identifier (ADR-040). No profile page yet: phase 2
-is visibility, preview and copy; phase 3 is stars, search and the heatmap.
+**Public profiles — phases 1 and 2 of 3 done.** Usernames and either-identifier
+login (ADR-040); publishing, visitor preview and copying (ADR-041). Phase 3 is
+stars, search and the contribution heatmap — and it is what makes any of this
+*findable*, because today the only way to reach someone's public deck is to be
+handed its URL.
+
+The load-bearing piece is `src/http/route-classes.ts`: every route declares
+itself public, owner or visitor, and three tests plus a runtime assertion keep
+the declaration and the behaviour from drifting apart.
 
 **Public profiles — the design.** Usernames, user search, public and
 private decks, stars, and copying someone else's public deck. Seven features

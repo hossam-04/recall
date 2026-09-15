@@ -138,8 +138,51 @@ GONE=$(psql "$DB" -tAc "select deleted_at is not null from cards where id = $CAR
 expect 201 "bob registers"  -X POST "${json[@]}" -d "$B" "$BASE/api/users"
 expect 201 "bob logs in"    -X POST "${json[@]}" -d "$B_LOGIN" -c "$JAR_B" "$BASE/api/sessions"
 expect 403 "bob is refused alice's deck" -b "$JAR_B" "$BASE/api/decks/$DECK"
+CSRF_B="-H x-csrf-token:$(csrf "$JAR_B")"
 expect 200 "bob's own deck list is empty" -b "$JAR_B" "$BASE/api/decks"
 [ "$(cat /tmp/smoke-body)" = "[]" ] && pass "and it really is empty" || fail "bob sees $(cat /tmp/smoke-body)"
+
+# --- publishing and copying (ADR-041) ----------------------------------------
+# Over a real socket because this is where authorisation widened: two cookie
+# jars, one deck, and the question of which of them may do what.
+
+# shellcheck disable=SC2086
+expect 200 "alice publishes her deck" -X PATCH "${json[@]}" $CSRF_A \
+  -b "$JAR_A" -d '{"visibility":"public"}' "$BASE/api/decks/$DECK"
+
+expect 200 "bob can now read it"       -b "$JAR_B" "$BASE/api/decks/$DECK"
+grep -q '"role":"visitor"' /tmp/smoke-body && pass "and is told he is a visitor" \
+  || fail "no visitor role: $(cat /tmp/smoke-body)"
+expect 200 "and read its cards"        -b "$JAR_B" "$BASE/api/decks/$DECK/cards"
+grep -q 'stability' /tmp/smoke-body && fail "scheduler state leaked to a visitor: $(cat /tmp/smoke-body)" \
+  || pass "without any of alice's scheduler state"
+
+# Publishing granted reads. It granted nothing else, and that is the invariant
+# the whole design rests on.
+# shellcheck disable=SC2086
+expect 403 "bob still cannot add a card" -X POST "${json[@]}" $CSRF_B \
+  -b "$JAR_B" -d '{"front":"mine","back":"now"}' "$BASE/api/decks/$DECK/cards"
+# shellcheck disable=SC2086
+expect 403 "nor delete her deck" -X DELETE $CSRF_B -b "$JAR_B" "$BASE/api/decks/$DECK"
+# shellcheck disable=SC2086
+expect 403 "nor unpublish it" -X PATCH "${json[@]}" $CSRF_B \
+  -b "$JAR_B" -d '{"visibility":"private"}' "$BASE/api/decks/$DECK"
+
+# shellcheck disable=SC2086
+expect 201 "bob copies it into his own account" -X POST "${json[@]}" $CSRF_B \
+  -b "$JAR_B" -d '{"name":"Alice'"'"'s deck"}' "$BASE/api/decks/$DECK/copy"
+COPY=$(sed -n 's/.*"id":"\([0-9]*\)".*/\1/p' /tmp/smoke-body)
+FRESH=$(psql "$DB" -tAc "select count(*) from cards where deck_id = $COPY and (stability is not null or due_on <> current_date)")
+[ "$FRESH" = "0" ] && pass "and every copied card starts from scratch" \
+  || fail "$FRESH copied cards carried scheduler state"
+LABEL=$(psql "$DB" -tAc "select copied_from_label from decks where id = $COPY")
+[ -n "$LABEL" ] && pass "with the original credited: $LABEL" || fail "no attribution recorded"
+
+# shellcheck disable=SC2086
+expect 200 "alice unpublishes" -X PATCH "${json[@]}" $CSRF_A \
+  -b "$JAR_A" -d '{"visibility":"private"}' "$BASE/api/decks/$DECK"
+expect 403 "and bob is shut out again" -b "$JAR_B" "$BASE/api/decks/$DECK"
+expect 200 "but his copy is untouched" -b "$JAR_B" "$BASE/api/decks/$COPY"
 
 # --- export and import (ADR-036) ---------------------------------------------
 # Over the wire on purpose: the file is produced by one account and consumed by

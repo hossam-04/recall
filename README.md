@@ -21,9 +21,9 @@ Everything below runs against a real Postgres, a real socket, and real Chromium.
 | Layer | What it covers | Size |
 |---|---|---|
 | `tsc --noEmit` | both tsconfigs, strict | — |
-| `vitest run` | unit and integration | 172 tests |
-| `scripts/api-smoke.sh` | a real server driven by curl | 79 assertions |
-| `playwright test` | a real browser, real cookies, real keyboard | 17 specs |
+| `vitest run` | unit and integration | 189 tests |
+| `scripts/api-smoke.sh` | a real server driven by curl | 93 assertions |
+| `playwright test` | a real browser, real cookies, real keyboard | 18 specs |
 
 The whole gate takes about 35 seconds. One non-zero exit is a failure.
 
@@ -32,6 +32,13 @@ reveals the answer, 1 to 4 grade it — and read your history back on a statisti
 page. Cards and whole decks can be deleted, accounts can be closed, and a second user
 gets a 403 on the first user's deck. Deleting never destroys review history: the
 statistics page still counts a session you did on a deck you later threw away.
+
+A deck can be published. Anyone signed in can then read it and take their own
+copy — and that is all: publishing grants reads, never writes, so nobody else
+can add, edit, grade or delete anything in a deck they do not own. A copy is
+scheduled from scratch, because how well *you* know a card is a measurement of
+your memory rather than a property of the card, and it credits the deck it came
+from.
 
 A deck can also be exported to a file and imported into another account. The
 file holds the questions and answers and nothing else — how well *you* know a
@@ -106,7 +113,7 @@ src/http/routes/   users, sessions, decks, cards, stats — all under /api
 src/users, src/sessions   argon2 hashing, CSPRNG session and CSRF tokens
 src/stats/         streak, as a pure function
 web/src/           React 19 and react-router; Vite proxies /api to the API
-migrations/        ten .sql files, applied in order, each in its own transaction
+migrations/        eleven .sql files, applied in order, each in its own transaction
 tests/, e2e/       roughly 3,200 lines, against real Postgres and real Chromium
 ```
 

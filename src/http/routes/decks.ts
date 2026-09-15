@@ -3,6 +3,7 @@ import type { Pool } from "pg";
 import { z } from "zod";
 import { currentUser } from "../auth.js";
 import { CARD_IS_LIVE, DECK_IS_LIVE } from "../../db/sql.js";
+import { type RouteClass, classOf } from "../route-classes.js";
 import { today } from "../../scheduler/calendar.js";
 import { parseBody } from "../server.js";
 import { CARD_FRONT, CARD_BACK } from "../card-fields.js";
@@ -16,7 +17,13 @@ const CreateDeck = z.object({ name: z.string().trim().min(1).max(100) });
 
 type Deck = {
   id: string; name: string; createdAt: Date;
+  role?: "owner" | "visitor";
   cardCount: number; dueCount: number;
+  visibility: string;
+  /** Null unless this deck was copied from another. The label is the snapshot
+   *  taken at copy time; the id is the live link, and may outlive it. */
+  copiedFromDeckId: string | null;
+  copiedFromLabel: string | null;
 };
 
 /**
@@ -28,8 +35,16 @@ type Deck = {
  * `left join` so a deck with no cards still appears, with zeroes. An inner join
  * would silently drop empty decks — which are exactly the decks a new user has.
  */
+/**
+ * `pool.query<Deck>` is an assertion, not a check — TypeScript cannot read SQL,
+ * so a column missing here is `undefined` at runtime and silent at compile
+ * time. Adding a field to `Deck` therefore means visiting every select list
+ * that claims to produce one. There are two: this and `loadDeck`.
+ */
 const DECK_COLUMNS = `
-  select d.id, d.name, d.created_at as "createdAt",
+  select d.id, d.name, d.created_at as "createdAt", d.visibility,
+         d.copied_from_deck_id as "copiedFromDeckId",
+         d.copied_from_label as "copiedFromLabel",
          count(c.id)::int as "cardCount",
          (count(c.id) filter (where c.due_on <= $2::date))::int as "dueCount"
     from decks d left join cards c on c.deck_id = d.id and ${CARD_IS_LIVE}`;
@@ -39,7 +54,58 @@ export async function decksOf(pool: Pool, userId: string): Promise<Deck[]> {
     `${DECK_COLUMNS} where d.user_id = $1 and ${DECK_IS_LIVE} group by d.id order by d.name`,
     [userId, today()],
   );
-  return rows;
+  // `role` on every row rather than only on the single-deck fetch. It is
+  // request-scoped rather than a column, so duplicating it looks wasteful —
+  // but the alternative is a client that infers its role from which fields
+  // happen to be present, which is the guessing the discriminator exists to
+  // stop. A deck in your own list is always one you own.
+  return rows.map((deck) => ({ ...deck, role: "owner" as const }));
+}
+
+/**
+ * Fetches a deck and who owns it, before anyone decides what that means.
+ *
+ * The two `require*` helpers below differ only in the question they ask of this
+ * row, so the query is written once: a second copy would be a second place for
+ * the live-deck filter to be forgotten.
+ */
+async function loadDeck(
+  pool: Pool, deckId: string,
+): Promise<(Deck & { ownerId: string; visibility: string }) | undefined> {
+  const { rows } = await pool.query<Deck & { ownerId: string; visibility: string }>(
+    `select d.id, d.name, d.created_at as "createdAt", d.user_id as "ownerId",
+            d.visibility, d.copied_from_deck_id as "copiedFromDeckId",
+            d.copied_from_label as "copiedFromLabel",
+            count(c.id)::int as "cardCount",
+            (count(c.id) filter (where c.due_on <= $2::date))::int as "dueCount"
+       from decks d left join cards c on c.deck_id = d.id and ${CARD_IS_LIVE}
+      where d.id = $1 and ${DECK_IS_LIVE}
+      group by d.id`,
+    [deckId, today()],
+  );
+  return rows[0];
+}
+
+/**
+ * Refuses to run on a route that has not declared itself for this helper.
+ *
+ * The class sets in route-classes.ts would otherwise be documentation, and
+ * documentation drifts: a route could be declared `owner` while its handler
+ * called the readable helper, and nothing would notice until a stranger wrote
+ * to someone else's deck. Here the mismatch is a 500 on the first request,
+ * which the authorisation matrix turns into a red test.
+ */
+function assertDeclared(reply: FastifyReply, expected: RouteClass): void {
+  // Fastify types `method` as one verb or several; a route registered for
+  // several would be several rows in the table and several declarations.
+  const { method, url } = reply.request.routeOptions;
+  const verb = Array.isArray(method) ? (method[0] ?? "") : (method ?? "");
+  const declared = classOf(verb, url ?? "");
+  if (declared !== expected) {
+    throw new Error(
+      `${verb} ${url} is declared "${declared ?? "nothing"}" but asked for "${expected}"`,
+    );
+  }
 }
 
 /**
@@ -50,6 +116,10 @@ export async function decksOf(pool: Pool, userId: string): Promise<Deck[]> {
  * list, which leaks nothing but lets a request succeed against a deck that is
  * not the caller's. The cross-user test in tests/http/authorization.test.ts
  * caught it. One helper means one answer.
+ *
+ * Visibility is deliberately absent from this function. Publishing a deck
+ * grants reads and nothing else; every route that writes goes through here and
+ * keeps refusing strangers however public the deck is.
  */
 export async function requireOwnedDeck(
   pool: Pool,
@@ -57,16 +127,8 @@ export async function requireOwnedDeck(
   userId: string,
   reply: FastifyReply,
 ): Promise<Deck | undefined> {
-  const { rows } = await pool.query<Deck & { ownerId: string }>(
-    `select d.id, d.name, d.created_at as "createdAt", d.user_id as "ownerId",
-            count(c.id)::int as "cardCount",
-            (count(c.id) filter (where c.due_on <= $2::date))::int as "dueCount"
-       from decks d left join cards c on c.deck_id = d.id and ${CARD_IS_LIVE}
-      where d.id = $1 and ${DECK_IS_LIVE}
-      group by d.id`,
-    [deckId, today()],
-  );
-  const deck = rows[0];
+  assertDeclared(reply, "owner");
+  const deck = await loadDeck(pool, deckId);
   if (deck === undefined) {
     await reply.status(404).send({ error: "No such deck" });
     return undefined;
@@ -80,6 +142,44 @@ export async function requireOwnedDeck(
   }
   const { ownerId: _ownerId, ...visible } = deck;
   return visible;
+}
+
+/**
+ * Resolves a deck the caller may *read*: theirs, or one its owner published.
+ *
+ * A separate function rather than a flag on the one above. `requireOwnedDeck(…,
+ * { allowPublic: true })` reads, at a glance six months from now, as the check
+ * it is not — and it makes the audit a reading exercise. Two names mean
+ * `grep requireReadableDeck` returns exactly the routes where the predicate is
+ * widened, which is the whole list a reviewer needs.
+ *
+ * The role travels with the deck because the caller has to branch on it: an
+ * owner and a visitor get different columns, not the same columns behind a
+ * different predicate.
+ */
+export async function requireReadableDeck(
+  pool: Pool,
+  deckId: string,
+  userId: string,
+  reply: FastifyReply,
+): Promise<{ deck: Deck; role: "owner" | "visitor" } | undefined> {
+  assertDeclared(reply, "visitor");
+  const deck = await loadDeck(pool, deckId);
+  if (deck === undefined) {
+    await reply.status(404).send({ error: "No such deck" });
+    return undefined;
+  }
+
+  // An OR, never an AND. Owning it is unconditional — visibility only ever adds
+  // access, so a private deck is one where only the first clause can be true.
+  const owner = deck.ownerId === userId;
+  if (!owner && deck.visibility !== "public") {
+    await reply.status(403).send({ error: "Not your deck" });
+    return undefined;
+  }
+
+  const { ownerId: _ownerId, ...visible } = deck;
+  return { deck: visible, role: owner ? "owner" : "visitor" };
 }
 
 
@@ -121,6 +221,32 @@ const ImportDeck = z.object({
 
 const UNIQUE_VIOLATION = "23505";
 
+/** Publishing and unpublishing are the only edits a deck takes today. */
+const EditDeck = z.object({ visibility: z.enum(["private", "public"]) });
+
+/**
+ * `name` is optional and exists for one reason: deck names are unique per user,
+ * so copying a deck whose name you already use would always be a 409 with no
+ * way out — including copying your own.
+ */
+const CopyDeck = z.object({ name: z.string().trim().min(1).max(100).optional() });
+
+/**
+ * The handle of whoever owns a deck, for the attribution label and for showing
+ * a visitor whose deck they are reading.
+ *
+ * Separate from `loadDeck` rather than a join added to it: every other caller
+ * of that query is the owner, who does not need to be told their own name, and
+ * a join paid for on every deck fetch to serve two routes is the wrong trade.
+ */
+async function ownerHandleOf(pool: Pool, deckId: string): Promise<string> {
+  const { rows } = await pool.query<{ username: string }>(
+    `select u.username from decks d join users u on u.id = d.user_id where d.id = $1`,
+    [deckId],
+  );
+  return rows[0]?.username ?? "someone";
+}
+
 export function registerDeckRoutes(app: FastifyInstance, pool: Pool): void {
   app.post("/decks", async (request, reply) => {
     const userId = currentUser(request);
@@ -130,11 +256,16 @@ export function registerDeckRoutes(app: FastifyInstance, pool: Pool): void {
 
     try {
       const { rows } = await pool.query<Deck>(
+        // The literals are the truth about a deck that has just been created:
+        // no cards, nothing due, private, and copied from nothing.
         `insert into decks (user_id, name) values ($1, $2)
-         returning id, name, created_at as "createdAt", 0 as "cardCount", 0 as "dueCount"`,
+         returning id, name, created_at as "createdAt", visibility,
+                   copied_from_deck_id as "copiedFromDeckId",
+                   copied_from_label as "copiedFromLabel",
+                   0 as "cardCount", 0 as "dueCount"`,
         [userId, body.name],
       );
-      return await reply.status(201).send(rows[0]);
+      return await reply.status(201).send({ ...rows[0], role: "owner" });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === UNIQUE_VIOLATION) {
         // The request is well-formed; the current state conflicts.
@@ -208,10 +339,106 @@ export function registerDeckRoutes(app: FastifyInstance, pool: Pool): void {
     return await decksOf(pool, userId);
   });
 
+  /**
+   * One URL, two shapes, discriminated by `role`.
+   *
+   * Rejected a separate `/decks/:id/public`: it splits one concept in two and
+   * doubles the places the live-deck filter can be forgotten. The client
+   * branches on `role` rather than guessing from which fields are present.
+   */
   app.get<{ Params: { id: string } }>("/decks/:id", async (request, reply) => {
-    const deck = await requireOwnedDeck(pool, request.params.id, currentUser(request), reply);
-    if (deck === undefined) return;
-    return deck;
+    const found = await requireReadableDeck(pool, request.params.id, currentUser(request), reply);
+    if (found === undefined) return;
+
+    // `dueCount` is the owner's due count and means nothing to a visitor, who
+    // has never reviewed any of these cards. Sending it anyway would put a
+    // number on screen that is true of someone else.
+    if (found.role === "visitor") {
+      const { dueCount: _dueCount, ...rest } = found.deck;
+      return { ...rest, role: found.role, owner: await ownerHandleOf(pool, request.params.id) };
+    }
+    return { ...found.deck, role: found.role };
+  });
+
+  /**
+   * Publishing, and unpublishing. Owner-only: `visibility` decides who may
+   * read, so deciding it is itself a write.
+   */
+  app.patch<{ Params: { id: string } }>("/decks/:id", async (request, reply) => {
+    const userId = currentUser(request);
+    const body = parseBody(EditDeck, request.body, reply);
+    if (body === undefined) return;
+    if ((await requireOwnedDeck(pool, request.params.id, userId, reply)) === undefined) return;
+
+    const { rows } = await pool.query<{ visibility: string }>(
+      `update decks d set visibility = $3
+        where d.id = $1 and d.user_id = $2 and ${DECK_IS_LIVE}
+        returning d.visibility`,
+      [request.params.id, userId, body.visibility],
+    );
+    // Unpublishing does not delete anything: copies already taken stay taken,
+    // and this deck simply stops appearing to anyone else from now on.
+    return rows[0];
+  });
+
+  /**
+   * Copy someone's public deck into your own account.
+   *
+   * The cards never leave the database — one insert...select rather than a read
+   * into JavaScript and a write back out, which would be two round trips and a
+   * window in which the source could change underneath.
+   */
+  app.post<{ Params: { id: string }; Body: unknown }>("/decks/:id/copy", async (request, reply) => {
+    const userId = currentUser(request);
+    const body = parseBody(CopyDeck, request.body ?? {}, reply);
+    if (body === undefined) return;
+
+    const found = await requireReadableDeck(pool, request.params.id, currentUser(request), reply);
+    if (found === undefined) return;
+
+    const label = `${found.deck.name} by ${await ownerHandleOf(pool, request.params.id)}`;
+    const name = body.name ?? found.deck.name;
+
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+      const { rows } = await client.query<{ id: string }>(
+        `insert into decks (user_id, name, copied_from_deck_id, copied_from_label)
+         values ($1, $2, $3, $4) returning id`,
+        [userId, name, request.params.id, label],
+      );
+      const deckId = rows[0]?.id;
+      if (deckId === undefined) throw new Error("insert returned no row");
+
+      // Scheduler state is absent by construction: `due_on` is written as
+      // today rather than read, and stability, difficulty, interval_days and
+      // repetitions are not mentioned anywhere in this statement. There is no
+      // expression here that *could* carry them across — the same reason the
+      // export file omits them (ADR-036). Those numbers measure the owner's
+      // memory, not the deck.
+      //
+      // `source` is 'imported', written by the server and never taken from
+      // input, so M5's generated-versus-handwritten comparison stays clean.
+      await client.query(
+        `insert into cards (deck_id, front, back, source, due_on)
+         select $1, c.front, c.back, 'imported', $2::date
+           from cards c where c.deck_id = $3 and ${CARD_IS_LIVE}`,
+        [deckId, today(), request.params.id],
+      );
+      await client.query("commit");
+      return await reply.status(201).send({ id: deckId, name });
+    } catch (error) {
+      await client.query("rollback");
+      if (error instanceof Error && "code" in error && error.code === UNIQUE_VIOLATION) {
+        // The copier already has a deck by that name. `name` in the body is how
+        // a caller resolves it — and is also what makes copying your own deck
+        // useful rather than guaranteed to fail.
+        return await reply.status(409).send({ error: "You already have a deck with that name" });
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
   });
 
   /**

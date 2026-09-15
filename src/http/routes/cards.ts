@@ -4,7 +4,7 @@ import { z } from "zod";
 import { currentUser } from "../auth.js";
 import { parseBody } from "../server.js";
 import { CARD_FRONT, CARD_BACK } from "../card-fields.js";
-import { requireOwnedDeck } from "./decks.js";
+import { requireOwnedDeck, requireReadableDeck } from "./decks.js";
 import { CARD_IS_LIVE, DECK_IS_LIVE } from "../../db/sql.js";
 import { nextInterval, nextMemory, type Memory } from "../../scheduler/fsrs.js";
 import { GRADE_NUMBERS } from "../../scheduler/replay.js";
@@ -74,9 +74,34 @@ export function registerCardRoutes(
     return await reply.status(201).send(card);
   });
 
+  /**
+   * Two statements, deliberately, not one query with conditional columns.
+   *
+   * Everything a visitor must not see — `due_on`, `interval_days`,
+   * `repetitions`, `difficulty`, `stability` — measures the *owner's* memory
+   * rather than the deck, exactly as in ADR-036. A shared select list with a
+   * ternary in it is one innocent edit away from leaking all five, and the edit
+   * would look like tidying. Here the visitor's statement simply has no
+   * expression that could produce them.
+   *
+   * Filtering them out in JavaScript after the query would be worse still: a
+   * column added to `cards` next year arrives in the response by default, and
+   * the deletion list is a second place to keep in sync. The select list fails
+   * closed; a deny-list fails open.
+   */
   app.get<{ Params: { id: string } }>("/decks/:id/cards", async (request, reply) => {
     const userId = currentUser(request);
-    if ((await requireOwnedDeck(pool, request.params.id, userId, reply)) === undefined) return;
+    const found = await requireReadableDeck(pool, request.params.id, userId, reply);
+    if (found === undefined) return;
+
+    if (found.role === "visitor") {
+      const { rows } = await pool.query<{ id: string; front: string; back: string }>(
+        `select c.id, c.front, c.back
+           from cards c where c.deck_id = $1 and ${CARD_IS_LIVE} order by c.id`,
+        [request.params.id],
+      );
+      return rows;
+    }
 
     const { rows } = await pool.query<CardRow>(
       `select c.id, c.front, c.back, c.repetitions, c.interval_days as "intervalDays",

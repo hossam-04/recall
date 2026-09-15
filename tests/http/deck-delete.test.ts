@@ -180,7 +180,10 @@ describe("a card in a deleted deck", () => {
       const response = await app.inject({
         method: method as "GET",
         url: url.replace(":id", id),
-        payload: { name: "x", front: "q", back: "a", grade: "good" },
+        // One payload valid for every deck route, because the body is parsed
+        // before the deck is looked up — a route whose schema this does not
+        // satisfy answers 400 and the assertion below says so loudly.
+        payload: { name: "x", front: "q", back: "a", grade: "good", visibility: "public" },
         ...as(alice),
       });
       expect(response.statusCode, `${method} ${url}`).toBe(404);

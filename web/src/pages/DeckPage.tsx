@@ -114,6 +114,32 @@ export function DeckPage() {
    * like a card, because nothing in this UI can bring it back — and a deck is
    * a great deal more to lose than one card.
    */
+  /**
+   * Publishing. The control is a checkbox rather than a two-press confirmation
+   * because it is reversible and nothing is lost by flipping it — unpublishing
+   * does not revoke copies already taken, and says so on screen.
+   */
+  async function setVisibility(visibility: "private" | "public") {
+    setError("");
+    try {
+      await api.patch(`/decks/${id}`, { visibility });
+      setDeck((current) => (current === undefined ? current : { ...current, visibility }));
+    } catch (caught) {
+      setError(messageOf(caught));
+    }
+  }
+
+  /** Copy someone else's deck into your own account, then go to your copy. */
+  async function copyDeck() {
+    setError("");
+    try {
+      const copied = await api.post<{ id: string }>(`/decks/${id}/copy`, {});
+      await navigate(`/decks/${copied.id}`);
+    } catch (caught) {
+      setError(messageOf(caught));
+    }
+  }
+
   async function deleteDeck() {
     setError("");
     try {
@@ -131,6 +157,40 @@ export function DeckPage() {
     return error !== "" ? <p className="error" role="alert">{error}</p> : <p className="muted">Loading…</p>;
   }
 
+  /**
+   * A visitor gets a different page, not the owner's page with buttons removed.
+   *
+   * Rendering the owner's controls disabled would be a worse lie: the server
+   * refuses those routes for a visitor whatever the UI shows, so a greyed-out
+   * "Add card" promises something that does not exist. Branching on the role
+   * the server sent keeps the two views honest about being two views.
+   */
+  if (deck.role === "visitor") {
+    return (
+      <>
+        <h1 style={{ marginBottom: ".25rem" }}>{deck.name}</h1>
+        <p className="subtitle" style={{ marginBottom: "1.5rem" }}>
+          {deck.cardCount} card{deck.cardCount === 1 ? "" : "s"} · by {deck.owner}
+        </p>
+        {error !== "" && <p className="error" role="alert">{error}</p>}
+        <p style={{ marginBottom: "1.5rem" }}>
+          <button className="primary" onClick={() => void copyDeck()}>
+            Copy this deck
+          </button>{" "}
+          <span className="muted" style={{ fontSize: ".85rem" }}>
+            You get your own copy, scheduled from scratch.
+          </span>
+        </p>
+        {cards.map((card) => (
+          <div className="item" key={card.id}>
+            <div>{card.front}</div>
+            <div className="muted">{card.back}</div>
+          </div>
+        ))}
+      </>
+    );
+  }
+
   return (
     <>
       <p className="muted" style={{ marginBottom: ".5rem" }}>
@@ -144,6 +204,18 @@ export function DeckPage() {
             {cards.length} card{cards.length === 1 ? "" : "s"} ·{" "}
             {due > 0 ? `${due} due today` : "nothing due today"}
           </p>
+          {deck.copiedFromLabel !== null && (
+            <p className="muted" style={{ fontSize: ".85rem", margin: ".25rem 0 0" }}>
+              {/* The link is the id, which survives a soft delete but stops
+                  resolving when the original is unpublished — so the label is
+                  what is shown, and the link is only wrapped around it when
+                  there is still something to reach. */}
+              Copied from{" "}
+              {deck.copiedFromDeckId === null
+                ? deck.copiedFromLabel
+                : <Link to={`/decks/${deck.copiedFromDeckId}`}>{deck.copiedFromLabel}</Link>}
+            </p>
+          )}
         </div>
         <span style={{ display: "flex", gap: ".5rem" }}>
           <button onClick={() => void exportDeck()}>Export</button>
@@ -164,6 +236,24 @@ export function DeckPage() {
             </Link>
           )}
         </span>
+      </div>
+
+      <div className="item" style={{ marginBottom: "1rem" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: ".6rem", margin: 0 }}>
+          <input
+            type="checkbox" checked={deck.visibility === "public"}
+            onChange={(event) => void setVisibility(event.target.checked ? "public" : "private")}
+          />
+          <span style={{ margin: 0 }}>
+            Public — anyone signed in can read this deck and copy it
+          </span>
+        </label>
+        {deck.visibility === "public" && (
+          <p className="muted" style={{ fontSize: ".85rem", margin: ".5rem 0 0" }}>
+            Reading only. Nobody else can add, edit, grade or delete anything here.
+            Unpublishing later does not take back copies already made.
+          </p>
+        )}
       </div>
 
       {cards.length === 0 && <p className="empty">No cards yet. Add one to start reviewing.</p>}
