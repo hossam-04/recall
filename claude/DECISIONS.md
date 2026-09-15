@@ -1860,3 +1860,52 @@ their last two digits within a second — so every spec file in a run shared its
 first six characters. With the search capped at twenty and ordered by name, the
 one being looked for fell off the end about one run in three. The prefix looked
 distinctive and was not.
+
+
+## ADR-043 — The year lives on the statistics page, not behind a profile link
+
+**Decision.** The navigation no longer links to your own profile. `/api/stats`
+returns 365 days instead of 30, and the statistics page switches between a
+contribution grid of the year and the bar chart of the last month. A deck's star
+count is shown on the deck page. `/u/:username` stays, reached from search.
+
+**One array, two views.** The endpoint already computed every day ever studied
+and then truncated the series to thirty for the chart — the totals were being
+derived from the untruncated map. Returning the year and slicing the tail in the
+client is one request and one spine, so the two charts cannot disagree about
+what happened on a given day. They answer different questions: the grid says
+whether you kept at it, the bars say how hard you went last Tuesday, which the
+grid cannot because five reviews and fourteen share a colour.
+
+**The maximum is taken after the slice.** Scaling thirty bars against the
+busiest day of the *year* would flatten an ordinary month to nothing the first
+time someone had one heavy session in March.
+
+### Four more things only looking at the page could find
+
+**The grid did not fit, so today was off-screen.** 53 columns of 11px with 3px
+gaps is 739px inside a 696px column, and `overflow-x: auto` hid the overflow
+behind a scrollbar that opens at its *start* — a year ago. The single square
+anyone came to look at was the one they could not see. Gaps are 2px now (687px,
+fits), and the grid scrolls itself to the right-hand end when a narrower window
+does overflow.
+
+**A checkbox is not a text field.** `input { width: 100% }` is written for text
+inputs and stretched the publish toggle across half its panel, with `label >
+span { display: block }` turning its sentence into a paragraph stranded on the
+far side. Checkbox labels have their own rule now, and the box takes the
+accent colour rather than the browser's blue.
+
+**Colour switched instantly while background animated**, so a button becoming
+primary spent 120ms as white text on a not-yet-green fill — caught by a
+screenshot taken mid-transition, which is the second time this session a
+transition has been photographed rather than a bug.
+
+Regression assertions for the first two, each verified by sabotage: the grid's
+`scrollWidth` must not exceed its `clientWidth`, and the checkbox must be under
+30px wide and to the left of its words.
+
+**Why the star count went on the deck page rather than into statistics.** Asked
+for directly. A star is a fact about one deck, and the page about that deck is
+where a fact about it belongs; statistics is about reviewing, and a list of
+decks there would be a second, worse decks page.

@@ -139,7 +139,10 @@ h2 { font-size: 1rem; margin: 0 0 1rem; font-weight: 600; }
 button {
   font: inherit; font-size: .9rem; padding: .5rem .85rem; border: 1px solid var(--line);
   border-radius: var(--radius); background: var(--panel); color: var(--fg);
-  cursor: pointer; transition: border-color .12s, background .12s;
+  /* `color` transitions alongside `background`. Without it the text colour
+     switches instantly while the fill animates, so a button becoming primary
+     spends 120ms as white-on-white. */
+  cursor: pointer; transition: border-color .12s, background .12s, color .12s;
 }
 button:hover:not(:disabled) { border-color: var(--muted); }
 button:disabled { opacity: .45; cursor: default; }
@@ -156,6 +159,17 @@ input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 
 textarea { resize: vertical; min-height: 4.5rem; }
 label { display: block; margin-bottom: 1rem; }
 label > span { display: block; font-size: .82rem; color: var(--muted); margin-bottom: .3rem; }
+
+/* A checkbox is not a text field. `width: 100%` above stretches one into half
+   the row and the block `span` turns its sentence into a wrapping paragraph,
+   which left the publish toggle floating in the middle of its panel with the
+   words pushed to the far side. A checkbox label reads left to right: the box,
+   then the sentence, on one line. */
+input[type="checkbox"] {
+  width: 1rem; height: 1rem; flex: none; padding: 0; accent-color: var(--accent);
+}
+label.check { display: flex; align-items: center; gap: .6rem; margin-bottom: 0; }
+label.check > span { display: inline; margin: 0; font-size: .9rem; color: var(--fg); }
 
 /* ---------- cards / lists ---------- */
 .stack { display: flex; flex-direction: column; gap: .6rem; }
@@ -277,9 +291,13 @@ h2 { font-size: 1.05rem; font-weight: 650; margin: 2.25rem 0 .75rem; }
 /* ---------- contribution heatmap ---------- */
 /* Columns are weeks, rows are weekdays — the same reading order as a calendar,
    which is why the grid flows down a column before moving right. */
+/* 53 columns of 11px with 2px gaps is 687px, which fits the 696px content
+   column. At 3px it was 739px, so the grid overflowed and the most recent
+   weeks — the ones anyone actually looks at — sat off the right edge behind a
+   scrollbar nobody would think to drag. */
 .heatmap {
   display: grid; grid-template-rows: repeat(7, 11px); grid-auto-flow: column;
-  grid-auto-columns: 11px; gap: 3px; overflow-x: auto; padding-bottom: .25rem;
+  grid-auto-columns: 11px; gap: 2px; overflow-x: auto; padding-bottom: .25rem;
 }
 /* The level rules cover the grid *and* the key, because the key's swatches are
    the same thing at the same size — that is what makes it a key. Scoping them

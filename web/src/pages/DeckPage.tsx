@@ -268,14 +268,12 @@ export function DeckPage() {
       </div>
 
       <div className="item" style={{ marginBottom: "1rem" }}>
-        <label style={{ display: "flex", alignItems: "center", gap: ".6rem", margin: 0 }}>
+        <label className="check">
           <input
             type="checkbox" checked={deck.visibility === "public"}
             onChange={(event) => void setVisibility(event.target.checked ? "public" : "private")}
           />
-          <span style={{ margin: 0 }}>
-            Public — anyone signed in can read this deck and copy it
-          </span>
+          <span>Public — anyone signed in can read this deck and copy it</span>
         </label>
         {deck.visibility === "public" && (
           <p className="muted" style={{ fontSize: ".85rem", margin: ".5rem 0 0" }}>

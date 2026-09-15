@@ -62,7 +62,6 @@ export function App() {
           <Link className="quiet" to="/stats">Stats</Link>
           <Link className="quiet" to="/people">People</Link>
           <Link className="quiet" to="/stars">Starred</Link>
-          <Link className="quiet" to={`/u/${session.user.username}`}>{session.user.username}</Link>
           <Link className="quiet" to="/account">Account</Link>
           <button className="quiet" onClick={() => void signOut()}>Sign out</button>
         </span>

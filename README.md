@@ -21,7 +21,7 @@ Everything below runs against a real Postgres, a real socket, and real Chromium.
 | Layer | What it covers | Size |
 |---|---|---|
 | `tsc --noEmit` | both tsconfigs, strict | — |
-| `vitest run` | unit and integration | 206 tests |
+| `vitest run` | unit and integration | 207 tests |
 | `scripts/api-smoke.sh` | a real server driven by curl | 110 assertions |
 | `playwright test` | a real browser, real cookies, real keyboard | 19 specs |
 
@@ -34,8 +34,9 @@ gets a 403 on the first user's deck. Deleting never destroys review history: the
 statistics page still counts a session you did on a deck you later threw away.
 
 Accounts have a public handle. You can search for someone by the start of
-theirs, open their profile to see what they have published and a year of their
-study as a contribution grid, and star a deck to keep it. The grid counts how
+theirs, open their profile to see what they have published, and star a deck to
+keep it. Your own year of study is on the statistics page, as a contribution
+grid you can switch to a bar chart of the last thirty days. The grid counts how
 much someone studied and never what — private decks are in the totals and never
 in the list.
 

@@ -57,6 +57,14 @@ test("a published deck is readable by someone else, and copyable", async ({ brow
   await expect(alicePage.getByRole("checkbox", { name: /Public/ })).toBeChecked();
   await expect(alicePage.getByText(/Unpublishing later/)).toBeVisible();
 
+  // The box sits to the left of its sentence, on one line. `input { width:
+  // 100% }` is written for text fields and stretched this one across half the
+  // panel, leaving the words stranded on the far side.
+  const box = await alicePage.getByRole("checkbox", { name: /Public/ }).boundingBox();
+  const words = await alicePage.getByText(/^Public — anyone/).boundingBox();
+  expect(box!.width).toBeLessThan(30);
+  expect(box!.x).toBeLessThan(words!.x);
+
   await bobPage.reload();
   await expect(bobPage.getByRole("heading", { name: "Spanish Verbs" })).toBeVisible();
   await expect(bobPage.getByText("hablar")).toBeVisible();

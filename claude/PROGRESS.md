@@ -16,7 +16,7 @@ that does not touch the authorisation model.
 ```
 $ npm run verify
 tsc --noEmit (both tsconfigs)  → clean
-vitest run                     → 32 files, 206 tests
+vitest run                     → 32 files, 207 tests
 ./scripts/api-smoke.sh         → 110 assertions, all good
 playwright test                → 19 specs, real Chromium
 $ echo $?
@@ -77,7 +77,7 @@ sessions, users`.
 
 ## Decisions that shape everything after them
 
-42 ADRs in `claude/DECISIONS.md`. The load-bearing ones:
+43 ADRs in `claude/DECISIONS.md`. The load-bearing ones:
 
 - **ADR-005** due dates are stored, not recomputed — changing a constant must
   not retroactively move cards already scheduled

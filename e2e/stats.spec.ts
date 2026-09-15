@@ -71,6 +71,19 @@ test("the stats page counts what you actually reviewed", async ({ page }) => {
   await expect(figure("days studied")).toHaveText("1");
   await expect(figure("recalled first try")).toHaveText("67%");
 
+  // The page opens on the year now; the bars are behind the range toggle.
+  await expect(page.locator(".heatmap i:not(.pad)")).toHaveCount(365);
+
+  // The grid fits the content column. It did not: 53 columns at 11px with 3px
+  // gaps is 739px in a 696px column, so the most recent weeks — the only part
+  // anyone looks at — sat off the right edge behind a scrollbar.
+  const fits = await page.locator(".heatmap").evaluate(
+    (el) => el.scrollWidth <= el.clientWidth,
+  );
+  expect(fits).toBe(true);
+  await page.getByRole("radio", { name: "30 days" }).click();
   await expect(page.locator(".spark .bar")).toHaveCount(30);
+  // Both views read the same array, so the day counts cannot disagree.
+  await expect(page.getByRole("radio", { name: "Year" })).toBeVisible();
   await expect(page.getByText("2 cards across 1 deck")).toBeVisible();
 });

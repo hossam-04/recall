@@ -6,7 +6,16 @@ import { currentStreak } from "../../stats/streak.js";
 import { dailyReviewCounts } from "../../stats/daily.js";
 import { addDays, toDateString } from "../../scheduler/calendar.js";
 
-const WINDOW_DAYS = 30;
+/**
+ * A year, because the statistics page now offers both views of it: a grid of
+ * the whole span and a bar chart of the most recent month, sliced from this
+ * same array. One request and one spine, so the two charts can never disagree
+ * about what happened on a given day.
+ */
+const WINDOW_DAYS = 365;
+
+/** What the bar chart shows, taken from the tail of the year. */
+export const RECENT_DAYS = 30;
 
 export type Stats = {
   totals: { reviews: number; daysStudied: number; cards: number; decks: number };

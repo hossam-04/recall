@@ -2,6 +2,10 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { api, type Grade, type Stats } from "../api.js";
 import { messageOf } from "../App.js";
+import { Heatmap } from "../Heatmap.js";
+
+/** The bar chart's span, sliced from the year the endpoint returns. */
+const RECENT_DAYS = 30;
 
 const GRADE_LABELS: Record<Grade, string> = {
   again: "Again", hard: "Hard", good: "Good", easy: "Easy",
@@ -10,6 +14,9 @@ const GRADE_LABELS: Record<Grade, string> = {
 export function StatsPage() {
   const [stats, setStats] = useState<Stats | undefined>(undefined);
   const [error, setError] = useState("");
+  // Defaults to the year: it is the view that answers the question this page is
+  // really for, and the month is one press away.
+  const [span, setSpan] = useState<"year" | "recent">("year");
 
   useEffect(() => {
     api.get<Stats>("/stats").then(setStats).catch((caught) => setError(messageOf(caught)));
@@ -23,7 +30,11 @@ export function StatsPage() {
   // means you did not know it. Calling `hard` a failure would make the number
   // punish honesty about difficulty.
   const recalled = graded - stats.grades.again;
-  const busiest = Math.max(1, ...stats.daily.map((entry) => entry.count));
+  // Sliced before the maximum is taken. Scaling thirty bars against the busiest
+  // day of the *year* would flatten a normal month into nothing the first time
+  // someone had one heavy session in March.
+  const recent = stats.daily.slice(-RECENT_DAYS);
+  const busiest = Math.max(1, ...recent.map((entry) => entry.count));
 
   return (
     <>
@@ -43,14 +54,33 @@ export function StatsPage() {
         />
       </div>
 
-      <h2>The last 30 days</h2>
+      <div className="page-head" style={{ marginBottom: ".75rem", alignItems: "center" }}>
+        <h2 style={{ margin: 0 }}>{span === "year" ? "The last year" : "The last 30 days"}</h2>
+        {/* Two views of one array, not two datasets. The grid answers "have I
+            kept at it"; the bars answer "how hard did I go last Tuesday", which
+            the grid cannot, because five reviews and fourteen share a colour. */}
+        <div role="radiogroup" aria-label="Range" style={{ display: "flex", gap: ".4rem" }}>
+          {([["year", "Year"], ["recent", "30 days"]] as const).map(([value, label]) => (
+            <button
+              key={value} role="radio" aria-checked={span === value}
+              className={span === value ? "primary" : ""}
+              onClick={() => setSpan(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {graded === 0 ? (
         <p className="empty">No reviews yet. The chart fills in as you study.</p>
+      ) : span === "year" ? (
+        <Heatmap daily={stats.daily} />
       ) : (
         <div className="spark" role="img" aria-label={`Reviews per day: ${
-          stats.daily.map((entry) => `${entry.day} ${entry.count}`).join(", ")
+          recent.map((entry) => `${entry.day} ${entry.count}`).join(", ")
         }`}>
-          {stats.daily.map((entry) => (
+          {recent.map((entry) => (
             // Every day has a bar, including the empty ones. A chart built only
             // from days that have data closes its own gaps and shows a month of
             // unbroken study that never happened.

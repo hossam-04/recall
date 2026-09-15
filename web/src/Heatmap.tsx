@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 /**
  * A year of study, one square per day.
  *
@@ -45,12 +46,28 @@ export function Heatmap({ daily }: { daily: Day[] }) {
   const first = daily[0];
   const offset = first === undefined ? 0 : new Date(`${first.day}T00:00:00`).getDay();
 
+  /**
+   * Start at the right-hand end when the grid does not fit.
+   *
+   * It fits the content column at this size, but a narrower window scrolls —
+   * and a horizontally scrollable strip opens at its *start*, which here is a
+   * year ago. Today is the square people came to look at.
+   */
+  const grid = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const element = grid.current;
+    if (element !== null) element.scrollLeft = element.scrollWidth;
+  }, [daily]);
+
   return (
     <>
       {/* The exact count lives on every square rather than only in the colour.
           The palest steps cannot reach 3:1 against the page — that is inherent
           to a heatmap — so the numbers have to be reachable some other way. */}
-      <div className="heatmap" role="img" aria-label={`${daily.length} days of review history`}>
+      <div
+        className="heatmap" ref={grid} role="img"
+        aria-label={`${daily.length} days of review history`}
+      >
         {Array.from({ length: offset }, (_, index) => (
           <i key={`pad-${index}`} className="pad" aria-hidden="true" />
         ))}

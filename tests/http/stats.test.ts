@@ -48,7 +48,7 @@ describe("statistics", () => {
     expect(stats.totals).toEqual({ reviews: 0, daysStudied: 0, cards: 0, decks: 0 });
     expect(stats.streak).toBe(0);
     expect(stats.grades).toEqual({ again: 0, hard: 0, good: 0, easy: 0 });
-    expect(stats.daily).toHaveLength(30);
+    expect(stats.daily).toHaveLength(365);
     expect(stats.daily.every((entry) => entry.count === 0)).toBe(true);
   });
 
@@ -98,10 +98,10 @@ describe("statistics", () => {
     const stats = await statsOf(user);
     const today = toDateString(new Date());
 
-    expect(stats.daily).toHaveLength(30);
+    expect(stats.daily).toHaveLength(365);
     expect(stats.daily.at(-1)?.day).toBe(today);
     // Sorted, contiguous, no gaps closed up.
-    expect(new Set(stats.daily.map((entry) => entry.day)).size).toBe(30);
+    expect(new Set(stats.daily.map((entry) => entry.day)).size).toBe(365);
     expect(stats.daily.filter((entry) => entry.count > 0)).toHaveLength(1);
     expect(stats.daily.at(-4)).toEqual({ day: stats.daily.at(-4)?.day, count: 1 });
   });
