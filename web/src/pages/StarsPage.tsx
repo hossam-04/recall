@@ -32,17 +32,21 @@ export function StarsPage() {
           Nothing starred yet. <Link to="/people">Find people</Link> to see what they have published.
         </p>
       )}
-      {decks.map((deck) => (
-        <Link className="item" key={deck.id} to={`/decks/${deck.id}`}>
-          <span>
-            {deck.name} <span className="muted">by {deck.owner}</span>
-          </span>
-          <span style={{ display: "flex", gap: ".5rem" }}>
-            <span className="pill">{deck.cardCount} card{deck.cardCount === 1 ? "" : "s"}</span>
-            <span className="pill">★ {deck.starCount}</span>
-          </span>
-        </Link>
-      ))}
+      <div className="stack">
+        {decks.map((deck) => (
+          <Link className="item" key={deck.id} to={`/decks/${deck.id}`}>
+            <div className="item-row">
+              <span className="deck-name">
+                {deck.name} <span className="muted">by {deck.owner}</span>
+              </span>
+              <span className="pills">
+                <span className="pill">{deck.cardCount} card{deck.cardCount === 1 ? "" : "s"}</span>
+                <span className="pill">★ {deck.starCount}</span>
+              </span>
+            </div>
+          </Link>
+        ))}
+      </div>
     </>
   );
 }

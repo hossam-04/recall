@@ -207,12 +207,14 @@ export function DeckPage() {
             You get your own copy, scheduled from scratch.
           </span>
         </p>
-        {cards.map((card) => (
-          <div className="item" key={card.id}>
-            <div>{card.front}</div>
-            <div className="muted">{card.back}</div>
-          </div>
-        ))}
+        <div className="stack">
+          {cards.map((card) => (
+            <div className="item" key={card.id}>
+              <div className="deck-name">{card.front}</div>
+              <div className="muted">{card.back}</div>
+            </div>
+          ))}
+        </div>
       </>
     );
   }

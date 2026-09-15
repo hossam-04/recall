@@ -34,19 +34,35 @@ function describe({ day, count }: Day): string {
 }
 
 export function Heatmap({ daily }: { daily: Day[] }) {
+  /**
+   * Blank squares before the first day, so that a row really is a weekday.
+   *
+   * The grid flows down a column before moving right, which makes rows
+   * weekdays only if the first cell lands on the right one. Without this the
+   * whole grid is rotated by however many days ago the window happens to start
+   * — the picture still looks like a calendar and silently is not one.
+   */
+  const first = daily[0];
+  const offset = first === undefined ? 0 : new Date(`${first.day}T00:00:00`).getDay();
+
   return (
     <>
       {/* The exact count lives on every square rather than only in the colour.
           The palest steps cannot reach 3:1 against the page — that is inherent
           to a heatmap — so the numbers have to be reachable some other way. */}
       <div className="heatmap" role="img" aria-label={`${daily.length} days of review history`}>
+        {Array.from({ length: offset }, (_, index) => (
+          <i key={`pad-${index}`} className="pad" aria-hidden="true" />
+        ))}
         {daily.map((entry) => (
           <i key={entry.day} data-level={level(entry.count)} title={describe(entry)} />
         ))}
       </div>
       <div className="heatmap-key">
         <span>Less</span>
-        {[0, 1, 2, 3, 4].map((step) => <i key={step} data-level={step} className="heatmap" style={{ background: `var(--heat-${step})` }} />)}
+        {/* No `heatmap` class on these: that one is the grid container, and
+            putting it on a swatch made every swatch its own grid. */}
+        {[0, 1, 2, 3, 4].map((step) => <i key={step} data-level={step} />)}
         <span>More</span>
       </div>
     </>

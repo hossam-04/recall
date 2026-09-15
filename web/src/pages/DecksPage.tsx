@@ -122,7 +122,7 @@ export function DecksPage() {
           // target than it appears, which is worse than one that plainly is not
           // clickable. Nothing inside is interactive, so a block-level anchor
           // stays valid — no nested controls.
-          <Link className="item deck-item" key={deck.id} to={`/decks/${deck.id}`}>
+          <Link className="item" key={deck.id} to={`/decks/${deck.id}`}>
             <div className="item-row">
               <span className="deck-name">{deck.name}</span>
               <span className="pills">

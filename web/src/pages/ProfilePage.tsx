@@ -61,16 +61,20 @@ export function ProfilePage({ me }: { me: string }) {
           {mine ? "You have not made any decks yet." : "Nothing published yet."}
         </p>
       )}
-      {profile.decks.map((deck) => (
-        <Link className="item" key={deck.id} to={`/decks/${deck.id}`}>
-          <span>{deck.name}</span>
-          <span style={{ display: "flex", gap: ".5rem" }}>
-            {mine && deck.visibility === "private" && <span className="pill">private</span>}
-            <span className="pill">{deck.cardCount} card{deck.cardCount === 1 ? "" : "s"}</span>
-            {deck.starCount > 0 && <span className="pill">★ {deck.starCount}</span>}
-          </span>
-        </Link>
-      ))}
+      <div className="stack">
+        {profile.decks.map((deck) => (
+          <Link className="item" key={deck.id} to={`/decks/${deck.id}`}>
+            <div className="item-row">
+              <span className="deck-name">{deck.name}</span>
+              <span className="pills">
+                {mine && deck.visibility === "private" && <span className="pill">private</span>}
+                <span className="pill">{deck.cardCount} card{deck.cardCount === 1 ? "" : "s"}</span>
+                {deck.starCount > 0 && <span className="pill">★ {deck.starCount}</span>}
+              </span>
+            </div>
+          </Link>
+        ))}
+      </div>
     </>
   );
 }

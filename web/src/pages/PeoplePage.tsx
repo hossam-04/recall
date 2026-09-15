@@ -17,15 +17,26 @@ export function PeoplePage() {
   const [q, setQ] = useState("");
   const [people, setPeople] = useState<Person[]>([]);
   const [error, setError] = useState("");
+  /**
+   * Whether a query is in flight *for what is currently typed*.
+   *
+   * Without it the empty state renders during the debounce and the fetch, so
+   * every search flashes "Nobody by that name" before the answer arrives — a
+   * false negative on the way to a true positive, which is worse than no
+   * feedback at all.
+   */
+  const [searching, setSearching] = useState(false);
 
   useEffect(() => {
-    if (q.trim() === "") { setPeople([]); setError(""); return; }
+    if (q.trim() === "") { setPeople([]); setError(""); setSearching(false); return; }
 
+    setSearching(true);
     let cancelled = false;
     const timer = setTimeout(() => {
       api.get<Person[]>(`/users?q=${encodeURIComponent(q.trim())}`)
         .then((found) => { if (!cancelled) { setPeople(found); setError(""); } })
-        .catch((caught) => { if (!cancelled) setError(messageOf(caught)); });
+        .catch((caught) => { if (!cancelled) setError(messageOf(caught)); })
+        .finally(() => { if (!cancelled) setSearching(false); });
     }, 200);
 
     return () => { cancelled = true; clearTimeout(timer); };
@@ -47,17 +58,23 @@ export function PeoplePage() {
       </label>
 
       {error !== "" && <p className="error" role="alert">{error}</p>}
-      {q.trim() !== "" && people.length === 0 && error === "" && (
+      {q.trim() !== "" && !searching && people.length === 0 && error === "" && (
         <p className="empty">Nobody by that name.</p>
       )}
-      {people.map((person) => (
-        <Link className="item" key={person.username} to={`/u/${person.username}`}>
-          <span>{person.username}</span>
-          <span className="pill">
-            {person.publicDecks} public deck{person.publicDecks === 1 ? "" : "s"}
-          </span>
-        </Link>
-      ))}
+      <div className="stack" style={{ marginTop: "1rem" }}>
+        {people.map((person) => (
+          <Link className="item" key={person.username} to={`/u/${person.username}`}>
+            <div className="item-row">
+              <span className="deck-name">{person.username}</span>
+              <span className="pills">
+                <span className="pill">
+                  {person.publicDecks} public deck{person.publicDecks === 1 ? "" : "s"}
+                </span>
+              </span>
+            </div>
+          </Link>
+        ))}
+      </div>
     </>
   );
 }

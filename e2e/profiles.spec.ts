@@ -56,10 +56,41 @@ test("find someone, read their deck, star it", async ({ browser }) => {
   await register(bobPage, uniqueHandle());
   await bobPage.getByRole("link", { name: "People" }).click();
   await bobPage.getByLabel("Username").fill(author.slice(0, -2));
-  await bobPage.getByRole("link", { name: new RegExp(author) }).click();
+  // Checked immediately, inside the debounce window: the empty state used to
+  // render while the request was still in flight, so every search flashed a
+  // false "nobody" on its way to a result.
+  await expect(bobPage.getByText("Nobody by that name.")).toHaveCount(0);
+  // Scoped past the navigation, which contains a link with this exact handle.
+  await bobPage.locator(".stack").getByRole("link", { name: new RegExp(author) }).click();
 
   await expect(bobPage.getByRole("heading", { name: author })).toBeVisible();
   await expect(bobPage.getByRole("img", { name: /days of review history/ })).toBeVisible();
+
+  // A list row fills its column. An anchor is inline by default and a row
+  // outside a flex column shrink-wraps to its text and sits beside the next
+  // one, which is what three list pages did until someone looked at them.
+  //
+  // `toHaveCSS("display", "block")` was the first attempt and measured nothing:
+  // a flex item is blockified, so a `.stack` child computes to `block` whether
+  // or not any rule says so. Width against the content column catches both the
+  // missing wrapper and the inline anchor.
+  const row = await bobPage.locator(".stack a.item").first().boundingBox();
+  const column = await bobPage.locator("main").boundingBox();
+  expect(row!.width).toBeGreaterThan(column!.width * 0.8);
+
+  // The key's swatches are the grid's colours at the grid's size — that is what
+  // makes it a key. Scoped to `.heatmap` alone, they had no background rule and
+  // rendered transparent, so the legend was three words and empty space.
+  // Asserting they *differ* rather than that one is opaque: falling back to the
+  // level-0 colour is also a broken key, and is not transparent.
+  const colourOf = (level: number) =>
+    bobPage.locator(`.heatmap-key i[data-level="${level}"]`)
+      .evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(await colourOf(4)).not.toBe(await colourOf(0));
+
+  // 365 days plus however many blanks align the first column to a weekday.
+  const cells = bobPage.locator(".heatmap i:not(.pad)");
+  await expect(cells).toHaveCount(365);
   await bobPage.getByRole("link", { name: /Spanish Verbs/ }).click();
 
   await expect(bobPage.getByRole("heading", { name: "Spanish Verbs" })).toBeVisible();

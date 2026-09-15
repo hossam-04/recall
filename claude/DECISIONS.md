@@ -1810,6 +1810,48 @@ rather than the instance.
 
 It was found by opening the app, not by the suite — the fourth time.
 
+### What the screenshots caught that nothing else did
+
+Four layout bugs, none of which any test could have failed on, because the
+suites checked behaviour and these were all about appearance.
+
+**`.item` had no `display` rule.** The deck list worked because it also carried
+`a.deck-item { display: block }`; three new list pages used `.item` alone on a
+`<Link>`, and an anchor is inline by default — so rows shrink-wrapped to their
+text and sat beside each other. The rule is now keyed on `a.item`, so anything
+that looks like a panel behaves like one without depending on a second class
+being remembered, and the lists use the `.stack` / `.item-row` / `.pills`
+composition the deck list already had.
+
+**The legend swatches were invisible.** The level colours were scoped
+`.heatmap i[data-level]` and the key's swatches live in `.heatmap-key`, so they
+matched no background rule at all. Both now share `:is(.heatmap, .heatmap-key)`,
+which is the honest statement: a key is the grid's colours at the grid's size.
+
+**Level 1 was indistinguishable from level 0.** The neutral and the palest green
+sat within a hundredth of each other in lightness, so a day you studied looked
+like a day you did not — which is the one distinction the chart exists to make.
+The ramp's steps are now widest at the bottom.
+
+**The grid was not aligned to weekdays.** It flows down a column before moving
+right, which makes rows weekdays only if the first cell lands on the right one;
+without leading blanks the whole year is rotated by however many days ago the
+window starts, and it still looks exactly like a calendar. Three blank cells now
+pad the start.
+
+**And the search flashed a false negative.** "Nobody by that name" rendered
+during the debounce and the request, so every search showed it on the way to a
+result. Gated on a `searching` flag now.
+
+**Two regression assertions that at first measured nothing.** `toHaveCSS
+("display", "block")` passes whether or not the rule exists, because a flex item
+is blockified and the row's parent is a flex column. And asserting the swatch is
+not transparent passes when it falls back to the level-0 colour, which is a
+broken key too. Replaced by a width compared against the content column, and by
+asserting two swatches *differ*. Both sabotages now turn the spec red; neither
+did before. Twelfth and thirteenth instances in this project of a test that
+passed for a reason other than its name.
+
 ### A flake worth keeping
 
 The browser spec searched for the first six characters of a generated handle.

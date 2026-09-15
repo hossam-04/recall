@@ -21,10 +21,14 @@
      rainbow and not the categorical colours — magnitude is one variable, and
      the only thing a reader must be able to do is order the steps. Level 0 is
      a neutral, so "no reviews" reads as absence rather than as a little bit. */
-  --light-heat-0: #eceae5;
-  --light-heat-1: #d7ece0;
-  --light-heat-2: #9ed3b8;
-  --light-heat-3: #4f9f7a;
+  /* The gap between 0 and 1 is the one that matters most: it is the difference
+     between a day you studied and a day you did not, and the first version put
+     them within a hundredth of each other in lightness — every square looked
+     the same. Steps are widest at the bottom of the ramp for that reason. */
+  --light-heat-0: #ebe9e4;
+  --light-heat-1: #b9dfc9;
+  --light-heat-2: #7cc0a0;
+  --light-heat-3: #3f9070;
   --light-heat-4: #1f6b46;
 
   --dark-bg: #141517;
@@ -39,9 +43,9 @@
   /* Chosen against the dark surface rather than flipped: on a dark ground
      magnitude reads as increasing brightness, so the ramp runs the other way. */
   --dark-heat-0: #24282c;
-  --dark-heat-1: #1d4435;
-  --dark-heat-2: #2f6b4f;
-  --dark-heat-3: #4d9a76;
+  --dark-heat-1: #205440;
+  --dark-heat-2: #2f8059;
+  --dark-heat-3: #4aa77e;
   --dark-heat-4: #74c39a;
 
   --bg: var(--light-bg);
@@ -162,16 +166,21 @@ label > span { display: block; font-size: .82rem; color: var(--muted); margin-bo
 .item-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
 .pills { display: flex; gap: .4rem; align-items: center; }
 
-/* The entire panel is the target. */
-a.deck-item {
+/* The entire panel is the target.
+   Keyed on `a.item` rather than a second class. An anchor is inline by default,
+   so an `.item` link without this rule collapses to the width of its text and
+   sits beside its neighbours — which is exactly what three new list pages did.
+   Anything that looks like a panel should behave like one wherever it is put,
+   without depending on someone remembering a second class name. */
+a.item {
   display: block; color: inherit; text-decoration: none;
   transition: border-color .12s, background .12s, transform .06s;
 }
-a.deck-item:hover { border-color: var(--accent); background: var(--accent-soft); }
-a.deck-item:active { transform: scale(.995); }
-a.deck-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+a.item:hover { border-color: var(--accent); background: var(--accent-soft); }
+a.item:active { transform: scale(.995); }
+a.item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .deck-name { font-weight: 550; }
-a.deck-item:hover .deck-name { color: var(--accent); }
+a.item:hover .deck-name { color: var(--accent); }
 
 .pill {
   font-size: .78rem; padding: .15rem .5rem; border-radius: 999px;
@@ -272,11 +281,19 @@ h2 { font-size: 1.05rem; font-weight: 650; margin: 2.25rem 0 .75rem; }
   display: grid; grid-template-rows: repeat(7, 11px); grid-auto-flow: column;
   grid-auto-columns: 11px; gap: 3px; overflow-x: auto; padding-bottom: .25rem;
 }
-.heatmap i { border-radius: 2px; background: var(--heat-0); display: block; }
-.heatmap i[data-level="1"] { background: var(--heat-1); }
-.heatmap i[data-level="2"] { background: var(--heat-2); }
-.heatmap i[data-level="3"] { background: var(--heat-3); }
-.heatmap i[data-level="4"] { background: var(--heat-4); }
+/* The level rules cover the grid *and* the key, because the key's swatches are
+   the same thing at the same size — that is what makes it a key. Scoping them
+   to `.heatmap` alone left every swatch in the legend with no background and
+   therefore invisible. */
+:is(.heatmap, .heatmap-key) i {
+  border-radius: 2px; background: var(--heat-0); display: block;
+}
+/* Leading blanks that align the first column to a weekday — absent, not empty. */
+.heatmap i.pad { background: transparent; }
+:is(.heatmap, .heatmap-key) i[data-level="1"] { background: var(--heat-1); }
+:is(.heatmap, .heatmap-key) i[data-level="2"] { background: var(--heat-2); }
+:is(.heatmap, .heatmap-key) i[data-level="3"] { background: var(--heat-3); }
+:is(.heatmap, .heatmap-key) i[data-level="4"] { background: var(--heat-4); }
 .heatmap-key {
   display: flex; align-items: center; gap: .3rem; justify-content: flex-end;
   font-size: .75rem; color: var(--muted); margin-top: .4rem;
