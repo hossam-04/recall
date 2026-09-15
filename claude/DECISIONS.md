@@ -1789,6 +1789,27 @@ And it is computed in the *server's* time zone, since no user time zone is
 stored, so a profile read from another hemisphere can put a square on the
 neighbouring day.
 
+### The bug that 206 tests did not catch
+
+`POST /api/sessions` built its own `{ id, email }` payload — a **third spelling**
+of "what a user is", after the `User` type and `USER_COLUMNS`. It silently
+dropped `username` and `maximumIntervalDays` the moment those were added, so a
+fresh sign-in handed the client a user with neither, and every screen reading
+them from the session showed nothing until the next reload refetched `/me`.
+
+Nothing caught it because the suite asserted the *status code* of a login and
+the *shape* of `/me`, and never that the two agree. The browser specs register
+and then sign in, but none of them read the handle out of the navigation — so
+the one place the omission showed was a place no assertion looked.
+
+The fix is the same shape as the one `PATCH /me` needed in ADR-039: send the
+whole user minus the hash, by destructuring, so a field added to `User` arrives
+by itself and the one field that must never be sent is excluded by name. The
+new test asserts the login response *equals* `/me`, which is the invariant
+rather than the instance.
+
+It was found by opening the app, not by the suite — the fourth time.
+
 ### A flake worth keeping
 
 The browser spec searched for the first six characters of a generated handle.

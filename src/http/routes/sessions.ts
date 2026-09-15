@@ -71,6 +71,7 @@ export function registerSessionRoutes(app: FastifyInstance, pool: Pool): void {
       return await reply.status(401).send({ error: "Invalid credentials" });
     }
 
+    const { passwordHash: _passwordHash, ...profile } = user;
     const session = await createSession(pool, user.id);
     return await reply
       .header("set-cookie", [
@@ -83,7 +84,13 @@ export function registerSessionRoutes(app: FastifyInstance, pool: Pool): void {
         }),
       ])
       .status(201)
-      .send({ id: user.id, email: user.email });
+      // The whole user minus the hash, rather than a hand-picked `{ id, email }`.
+      // That third spelling of "what a user is" silently dropped `username` and
+      // `maximumIntervalDays` the moment they were added, so a fresh sign-in
+      // left every screen reading them from the session showing nothing.
+      // Destructuring means a field added to `User` arrives here by itself, and
+      // the one field that must never be sent is excluded by name.
+      .send(profile);
   });
 
   app.delete("/sessions", async (request, reply) => {

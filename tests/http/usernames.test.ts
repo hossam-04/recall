@@ -13,6 +13,9 @@ const PASSWORD = "a-good-password";
 const register = (payload: object) =>
   app.inject({ method: "POST", url: "/api/users", payload });
 
+const login_ = (identifier: string, password = PASSWORD) =>
+  app.inject({ method: "POST", url: "/api/sessions", payload: { identifier, password } });
+
 const login = (identifier: string, password = PASSWORD) =>
   app.inject({ method: "POST", url: "/api/sessions", payload: { identifier, password } });
 
@@ -64,6 +67,20 @@ describe("login takes either identifier", () => {
   test("case-insensitively, for both", async () => {
     expect((await login("ALICE@x.com")).statusCode).toBe(201);
     expect((await login("Alice")).statusCode).toBe(201);
+  });
+
+  test("answers with the same user that /me does", async () => {
+    // The login route built its own `{ id, email }` payload, so signing in gave
+    // the client a user with no username and no settings — and every screen
+    // that reads them from the session showed undefined until the next reload.
+    // Nothing caught it: the suite asserted the *status* of a login and the
+    // *shape* of /me, and never that the two agree.
+    const login = await login_("alice@x.com");
+    const me = await app.inject({
+      method: "GET", url: "/api/me",
+      headers: { cookie: (login.headers["set-cookie"] as string[]).map((c) => c.split(";")[0]).join("; ") },
+    });
+    expect(login.json()).toEqual(me.json());
   });
 
   test("and says the same thing however it fails", async () => {
