@@ -58,12 +58,17 @@ export function App() {
     <main>
       <nav>
         <Link className="brand" to="/">recall</Link>
+        {/*
+          * The emoji are `aria-hidden` and the label carries the meaning.
+          * Without that the accessible name of each link becomes "bar chart
+          * Stats", which is what a screen reader would read aloud — and it
+          * would also quietly break every test that finds a link by its name.
+          */}
         <span className="who">
-          <Link className="quiet" to="/stats">Stats</Link>
-          <Link className="quiet" to="/people">People</Link>
-          <Link className="quiet" to="/stars">Starred</Link>
-          <Link className="quiet" to="/account">Account</Link>
-          <button className="quiet" onClick={() => void signOut()}>Sign out</button>
+          <Link className="quiet" to="/stats"><span aria-hidden="true">📊</span> Stats</Link>
+          <Link className="quiet" to="/people"><span aria-hidden="true">🔍</span> People</Link>
+          <Link className="quiet" to="/stars"><span aria-hidden="true">⭐</span> Starred</Link>
+          <Link className="quiet" to="/account"><span aria-hidden="true">⚙️</span> Settings</Link>
         </span>
       </nav>
       <Routes>
@@ -79,6 +84,7 @@ export function App() {
           element={
             <AccountPage
               user={session.user}
+              onSignedOut={() => void signOut()}
               onUpdated={(user) => setSession({ status: "in", user })}
               onDeleted={() => {
                 setSession({ status: "out" });

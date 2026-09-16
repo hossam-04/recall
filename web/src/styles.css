@@ -148,8 +148,17 @@ button:hover:not(:disabled) { border-color: var(--muted); }
 button:disabled { opacity: .45; cursor: default; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 550; }
 button.primary:hover:not(:disabled) { filter: brightness(1.08); }
-button.quiet { border-color: transparent; background: transparent; color: var(--muted); padding: .35rem .5rem; }
-button.quiet:hover:not(:disabled) { color: var(--fg); background: var(--line); }
+/* `.quiet` is the control that does not shout: the top bar, and the toggles
+   under a form. It is a <button> in some places and a <Link> in others, and it
+   should look the same either way — which means no underline on the link half,
+   because nothing else in that row has one and a row of underlined words does
+   not read as a row of controls. The hover fill is the affordance instead. */
+.quiet {
+  border-color: transparent; background: transparent; color: var(--muted);
+  padding: .35rem .5rem; text-decoration: none; border-radius: 8px;
+}
+.quiet:hover:not(:disabled) { color: var(--fg); background: var(--line); }
+a.quiet:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 input, textarea {
   font: inherit; width: 100%; padding: .55rem .7rem; border: 1px solid var(--line);

@@ -20,8 +20,13 @@ const THEMES: { value: Theme; label: string }[] = [
  * protection does not help against a signed-in tab someone else is sitting at.
  */
 export function AccountPage(
-  { user, onUpdated, onDeleted }:
-  { user: User; onUpdated: (user: User) => void; onDeleted: () => void },
+  { user, onUpdated, onSignedOut, onDeleted }:
+  {
+    user: User;
+    onUpdated: (user: User) => void;
+    onSignedOut: () => void;
+    onDeleted: () => void;
+  },
 ) {
   const [confirming, setConfirming] = useState(false);
   const [password, setPassword] = useState("");
@@ -70,8 +75,13 @@ export function AccountPage(
       <p className="muted" style={{ marginBottom: ".5rem" }}>
         <Link to="/">← All decks</Link>
       </p>
-      <h1>Account</h1>
-      <p className="subtitle">{user.email}</p>
+      <h1>Settings</h1>
+      {/* The handle is the public half of an account and the email is the
+          private one, so they are shown together, marked as what they are.
+          Signed in as *whom* is the first thing a settings page should answer. */}
+      <p className="subtitle">
+        <strong>@{user.username}</strong> · {user.email}
+      </p>
 
       <div className="item" style={{ marginTop: "2rem" }}>
         <h2 style={{ marginTop: 0 }}>Appearance</h2>
@@ -114,6 +124,15 @@ export function AccountPage(
             {saved && <span className="muted" role="status">Saved</span>}
           </div>
         </form>
+      </div>
+
+      <div className="item" style={{ marginTop: "1rem" }}>
+        <h2 style={{ marginTop: 0 }}>Sign out</h2>
+        <p className="muted">
+          Ends this session on this device. Your decks and your history stay exactly
+          where they are.
+        </p>
+        <button onClick={onSignedOut}>Sign out</button>
       </div>
 
       <div className="item" style={{ marginTop: "2rem" }}>

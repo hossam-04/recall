@@ -41,7 +41,7 @@ test.describe("appearance", () => {
 
   test("an explicit choice overrides the operating system and survives a reload", async ({ page }) => {
     await register(page);
-    await page.getByRole("link", { name: "Account" }).click();
+    await page.getByRole("link", { name: "Settings" }).click();
 
     // Nothing is set yet: every existing user is in this state, and it is what
     // makes the media query the only thing deciding the palette.
@@ -66,7 +66,7 @@ test.describe("appearance", () => {
 
   test("choosing System hands the decision back to the operating system", async ({ page }) => {
     await register(page);
-    await page.getByRole("link", { name: "Account" }).click();
+    await page.getByRole("link", { name: "Settings" }).click();
 
     await page.getByRole("radio", { name: "Dark" }).click();
     await page.getByRole("radio", { name: "System" }).click();
@@ -77,10 +77,35 @@ test.describe("appearance", () => {
   });
 });
 
+test("the top bar reads as controls, not as prose", async ({ page }) => {
+  await register(page);
+
+  // Every control in that row, not the one that happens to be first: `.quiet`
+  // is a <button> in some places and a <Link> in others, and an underline on
+  // the link half is what made the bar read as a sentence rather than a row of
+  // buttons.
+  const decoration = await page.locator("nav .who .quiet").evaluateAll(
+    (els) => els.map((el) => getComputedStyle(el).textDecorationLine),
+  );
+  expect(decoration.length).toBeGreaterThanOrEqual(4);
+  expect(new Set(decoration)).toEqual(new Set(["none"]));
+
+  // The emoji are decoration and must stay out of the accessible name, or a
+  // screen reader announces "bar chart Stats" and every by-name locator breaks.
+  await expect(page.getByRole("link", { name: "Stats", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
+
+  // Signing out moved off the bar and onto the settings page.
+  await expect(page.locator("nav").getByRole("button", { name: "Sign out" })).toHaveCount(0);
+  await page.getByRole("link", { name: "Settings" }).click();
+  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+  await expect(page.getByText(/^@/)).toBeVisible();
+});
+
 test("the longest-interval setting is what the scheduler obeys", async ({ page }) => {
   await register(page);
 
-  await page.getByRole("link", { name: "Account" }).click();
+  await page.getByRole("link", { name: "Settings" }).click();
   await page.getByLabel("Days").fill("2");
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Saved")).toBeVisible();

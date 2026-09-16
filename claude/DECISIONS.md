@@ -1909,3 +1909,36 @@ Regression assertions for the first two, each verified by sabotage: the grid's
 for directly. A star is a fact about one deck, and the page about that deck is
 where a fact about it belongs; statistics is about reviewing, and a list of
 decks there would be a second, worse decks page.
+
+
+## ADR-044 — The top bar is a row of controls
+
+**Decision.** "Account" becomes **Settings**, signing out moves onto that page,
+each top-bar item carries an emoji, and the handle is shown on the settings page
+beside the email. Nothing in the bar is underlined.
+
+**Signing out belongs with the account, not beside navigation.** It was the only
+item in that row that *did* something rather than going somewhere, sitting one
+careless click away from four that are harmless. On the settings page it has
+room to say what it does — this device, nothing lost — which a bar item never
+had.
+
+**The emoji are `aria-hidden` and the text carries the meaning.** Left in the
+accessible name, a screen reader announces "bar chart Stats", and every locator
+that finds a link by its name silently starts matching something else. Decorative
+means decorative in the markup, not just in intent.
+
+**`.quiet` had an underline on half its instances.** It is a `<button>` in some
+places and a `<Link>` in others, and only the links were underlined — so a row
+meant to read as controls read as a sentence. The class now carries
+`text-decoration: none` and the same hover fill either way, which is the
+affordance that replaces the underline. Body links keep theirs; those are prose.
+
+**The handle is on the settings page**, marked `@handle · email`: the public half
+of an account and the private one, shown together. Signed in as *whom* is the
+first question a settings page should answer, and after ADR-043 removed the
+profile link there was nowhere else the answer appeared.
+
+Both rules are tested across *every* control in the bar rather than the first
+one, and both sabotages — restoring the underline, and folding an emoji into an
+accessible name — turn that spec red.
