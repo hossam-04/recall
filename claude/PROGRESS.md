@@ -5,13 +5,32 @@ alone does not carry.
 
 ---
 
-## Current state
+## Closed — 2026-09-17
 
-**M0–M3 done, and M6 with them. M4 is deferred — it needs API credits that do
-not exist.** The work since has been a list of free additions chosen in their
-place. Deck export and import (ADR-036) is the most recent, and was not on that
-list: it was asked for directly, against a scope cut, and taken in the one shape
-that does not touch the authorisation model.
+**Done at this scope.** M0–M3 shipped, M6 (FSRS) shipped with them, and M4/M5
+were called off on 2026-09-11 for cost rather than for time. Eleven days,
+43 commits. ADR-045 is the closing entry and judges ADR-002 against what was
+actually built — worth reading before reopening anything.
+
+Reopening means starting with a local model via Ollama: it is the one thing that
+would make M4 and M5 possible at $0, and it was left undone deliberately.
+
+### What shipped
+
+- A working product end to end: register, sign in, build decks, add cards,
+  review by keyboard, read the history back.
+- FSRS-6 by hand, checked against `ts-fsrs` over 10,000 histories (ADR-034/035).
+- Hand-rolled session auth, CSRF, rate limiting keyed twice (ADR-015/021/031/040).
+- Decks published, previewed, copied and starred, with every route declaring who
+  may reach it (ADR-041/042).
+- 45 ADRs, and thirteen tests caught measuring something other than their name.
+
+### What did not
+
+- **M4 — AI generation.** Needs API credits a subscription does not provide.
+- **M5 — evals, cost accounting, degradation.** The differentiation ADR-002 said
+  the project rested on. It is absent, and ADR-045 says so plainly.
+- **Deployment** and **live deck sharing** were out of scope from the start.
 
 ```
 $ npm run verify
@@ -23,9 +42,8 @@ $ echo $?
 0                                          (~35 seconds)
 ```
 
-A working product: register, sign in, create decks, add cards, review them by
-keyboard in a browser. Postgres underneath with hand-written SQL, session auth
-with CSRF, and a second user gets 403.
+Final numbers: 43 commits · 2,838 lines of server · 1,773 of client · 4,902 of
+tests · 12 migrations · 26 routes · 45 ADRs.
 
 | # | Goal | Bar (the command that decides) | Done |
 |---|---|---|---|

@@ -6,8 +6,15 @@ for. Written end to end in TypeScript: Postgres with hand-written SQL, a Fastify
 API with session auth, a React UI, and a memory model checked against an
 independent implementation of the same algorithm.
 
-It is a learning project. The product is real and works, but the point is the
-assembly — and the record of why each piece is the way it is.
+It is a learning project, and it is **finished at this scope** — 43 commits over
+eleven days. The product is real and works; the point was the assembly, and the
+record of why each piece is the way it is.
+
+Two milestones were planned and not built: AI card generation and the eval suite
+that would have measured it. They were called off for cost, not for time, and
+[`claude/DECISIONS.md`](claude/DECISIONS.md) closes with an entry that judges the
+project against the case written against it before any code existed, rather than
+against what it would be nice to claim.
 
 ```bash
 npm run dev     # api on :3000, ui on :5173

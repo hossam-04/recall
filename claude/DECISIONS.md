@@ -1942,3 +1942,88 @@ profile link there was nowhere else the answer appeared.
 Both rules are tested across *every* control in the bar rather than the first
 one, and both sabotages — restoring the underline, and folding an emoji into an
 accessible name — turn that spec red.
+
+## ADR-045 — Closing the project, and judging ADR-002 against what was built
+
+**Decision.** `recall` is done at this scope. M4 (AI generation) and M5 (evals,
+cost accounting, degradation) are **not built and are not going to be** — the
+ship-without-AI check was called early on 2026-09-11, for money rather than for
+time, and eleven days of further work went into the product instead.
+
+Final state: 43 commits over 11 calendar days. 207 tests, 110 smoke assertions
+over a real socket, 20 browser specs, 12 migrations, 26 routes, 45 ADRs.
+`npm run verify` exits 0 from a clean checkout against an empty database, which
+was the done condition written before any code and never moved.
+
+### ADR-002 said to judge it at M5. M5 never happened, so judge it here.
+
+ADR-002's argument was that "full-stack CRUD with auth and an AI feature" is the
+most common shape in a junior portfolio, and that the differentiation rested
+**entirely** on M5. It said that if M5 were cut, the ADR was right and the
+resume bullet should be downgraded rather than dressed up.
+
+**On the differentiation, ADR-002 was right.** There is no eval suite, no
+measured cost per generation, no model comparison, and no graceful-degradation
+story, because there is no generation. The thing that would have been hard to
+copy is the thing that is missing. Saying otherwise would be exactly the dressing
+up that entry forbade.
+
+**On the correctness bar, it was wrong, and for a reason nobody planned.**
+ADR-002's second charge was the sharper one: the first project whose bar the
+author writes himself, and therefore "tests that pass because they assert what
+the code already does." Two things answered that:
+
+- **ADR-034's differential test.** FSRS-6 is hand-written and checked against
+  `ts-fsrs` over ten thousand random review histories, to the last decimal. That
+  is an oracle written by someone else who did not know this code existed — the
+  same rung as `pngcheck`, which ADR-002 assumed was unavailable here. It was
+  available; it was simply in a different milestone than the one being counted
+  on.
+- **Sabotage as a standing practice.** Thirteen tests were caught passing for a
+  reason other than their name, each recorded where it happened rather than
+  quietly fixed. That is direct evidence *against* the charge, and it only
+  exists because breaking the code deliberately became routine rather than
+  occasional.
+
+So: the portfolio argument stands, the epistemics argument does not. Half of
+ADR-002 was right, and the half that was wrong was wrong for a reason worth more
+than the half that was right.
+
+### The resume bullet, downgraded as instructed
+
+The M5 bullet is void. What is actually defensible:
+
+> Built a spaced-repetition system end to end in TypeScript (Fastify, Postgres,
+> React) with hand-rolled session auth, CSRF, and rate limiting; implemented
+> FSRS-6 by hand and verified it against an independent implementation across
+> 10,000 generated review histories; designed a published-deck authorisation
+> model in which every route declares who may reach it and a test fails the
+> build if a route declares nothing; kept a 45-entry decision log, including
+> thirteen cases of tests found to be measuring something other than their name.
+
+Everything in it is checkable by opening the repository, which is the only
+property a bullet needs.
+
+### What this project actually taught, as distinct from what it shipped
+
+The recurring lesson was not about spaced repetition. It was that **a rule
+enforced in two places will be enforced in one of them**: `USER_COLUMNS` against
+a hand-written `returning` list, `loadDeck` against `DECK_COLUMNS`, a palette
+against a media query, a route's class against its handler. Almost every bug in
+the second half of this log is a second copy of something that did not know
+about the first.
+
+The defence that worked was never care. It was making the second copy
+unnecessary (one shared constant), or impossible (named arguments where two
+`number`s were interchangeable), or loud (a test that reads Fastify's real route
+table and fails on anything undeclared).
+
+### What is left, and why it is not being done
+
+- **M4 and M5** need $20–40 of Anthropic API credits, which a subscription does
+  not provide. A local model via Ollama would make both possible at $0 and was
+  the last item on the free-additions list; it is left undone deliberately
+  rather than forgotten. Reopening the project means starting there.
+- **Deployment** was out of scope from the first page and stayed there.
+- **Live deck sharing** was a scope cut and remains one. ADR-036 and ADR-041
+  went as far as copies allow without touching it.
